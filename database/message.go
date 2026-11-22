@@ -430,6 +430,145 @@ func (d *Database) GetChatsLastMessages(chatIDs []int) (map[int]*domain.Message,
 	return result, nil
 }
 
+func (d *Database) GetChatLastReadMessage(chatID int) (*domain.Message, error) {
+	row := d.db.QueryRow(`
+		SELECT
+			id,
+			chat_id,
+			author_id,
+			created_at,
+			seen,
+			reply_to,
+			nonce,
+			content
+		FROM messages
+		WHERE chat_id = ?
+		  AND seen IS NOT NULL
+		ORDER BY id DESC
+		LIMIT 1
+	`, chatID)
+
+	var msg domain.Message
+
+	err := row.Scan(
+		&msg.ID,
+		&msg.ChatID,
+		&msg.AuthorID,
+		&msg.CreatedAt,
+		&msg.Seen,
+		&msg.ReplyTo,
+		&msg.Nonce,
+		&msg.Content,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	msg.CreatedAt = msg.CreatedAt.UTC()
+
+	slice := []domain.Message{msg}
+	if err := d.populateReplies(slice); err != nil {
+		return nil, err
+	}
+
+	return &slice[0], nil
+}
+
+func (d *Database) GetChatsLastReadMessages(chatIDs []int) (map[int]*domain.Message, error) {
+	result := make(map[int]*domain.Message)
+
+	if len(chatIDs) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, len(chatIDs))
+	args := make([]any, len(chatIDs))
+
+	for i, id := range chatIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		WITH ranked_messages AS (
+			SELECT
+				id,
+				chat_id,
+				author_id,
+				created_at,
+				seen,
+				reply_to,
+				nonce,
+				content,
+				ROW_NUMBER() OVER (
+					PARTITION BY chat_id
+					ORDER BY id DESC
+				) AS rn
+			FROM messages
+			WHERE chat_id IN (%s)
+			  AND seen IS NOT NULL
+		)
+		SELECT
+			id,
+			chat_id,
+			author_id,
+			created_at,
+			seen,
+			reply_to,
+			nonce,
+			content
+		FROM ranked_messages
+		WHERE rn = 1
+	`, strings.Join(placeholders, ","))
+
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []domain.Message
+
+	for rows.Next() {
+		var msg domain.Message
+
+		err := rows.Scan(
+			&msg.ID,
+			&msg.ChatID,
+			&msg.AuthorID,
+			&msg.CreatedAt,
+			&msg.Seen,
+			&msg.ReplyTo,
+			&msg.Nonce,
+			&msg.Content,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		msg.CreatedAt = msg.CreatedAt.UTC()
+
+		messages = append(messages, msg)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := d.populateReplies(messages); err != nil {
+		return nil, err
+	}
+
+	for i := range messages {
+		result[messages[i].ChatID] = &messages[i]
+	}
+
+	return result, nil
+}
+
 func (d *Database) populateReplies(messages []domain.Message) error {
 	replyIDsMap := make(map[int]bool)
 

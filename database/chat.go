@@ -152,6 +152,12 @@ func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
 	}
 	chatWithKeys.LastMessage = lastMsg
 
+	lastReadMsg, err := d.GetChatLastReadMessage(chatID)
+	if err != nil {
+		return nil, err
+	}
+	chatWithKeys.LastReadMessage = lastReadMsg
+
 	return chatWithKeys, nil
 }
 
@@ -225,8 +231,14 @@ func (d *Database) GetChats() ([]domain.ChatWithKeys, error) {
 			return nil, err
 		}
 
+		lastReadMessagesMap, err := d.GetChatsLastReadMessages(chatIDs)
+		if err != nil {
+			return nil, err
+		}
+
 		for i := range chats {
 			chats[i].LastMessage = lastMessagesMap[chats[i].ID]
+			chats[i].LastReadMessage = lastReadMessagesMap[chats[i].ID]
 		}
 	}
 

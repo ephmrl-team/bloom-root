@@ -18,9 +18,10 @@ type CreateChatRequest struct {
 
 type ChatResponse struct {
 	domain.RawChat
-	Me          []byte                            `json:"me"`
-	Recipient   []byte                            `json:"recipient"`
-	LastMessage *domain.DecryptedMessageWithReply `json:"last_message,omitempty"`
+	Me              []byte                            `json:"me"`
+	Recipient       []byte                            `json:"recipient"`
+	LastMessage     *domain.DecryptedMessageWithReply `json:"last_message,omitempty"`
+	LastReadMessage *domain.DecryptedMessageWithReply `json:"last_read_message,omitempty"`
 }
 
 func (c *BloomClient) CreateChat(token *CancelToken, receiverUser *CreateChatRequest) ([]byte, error) {
@@ -352,6 +353,32 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 				mapped := mappers.MapDomainMessageToDecrypted(lc.LastMessage)
 				newChatObject.LastMessage = &mapped
 			}
+
+			if chat.EncryptedLastReadMessage != nil {
+				if lc.LastReadMessage != nil && lc.LastReadMessage.ID == chat.EncryptedLastReadMessage.ID {
+					mapped := mappers.MapDomainMessageToDecrypted(lc.LastReadMessage)
+					newChatObject.LastReadMessage = &mapped
+				} else {
+					decryptedLastReadMessage, err := c.messageManager.DecryptMessage(chat.EncryptedLastReadMessage, lc.ChatKey, lc.SyncKey, userIdentity, recipientIdentity)
+					if err == nil {
+						msg := domain.Message{
+							MessageWithDecryptedData: domain.MessageWithDecryptedData{
+								RawMessageWithReply: *chat.EncryptedLastReadMessage,
+								Message:             *decryptedLastReadMessage,
+							},
+						}
+						messages = append(messages, msg)
+						mapped := mappers.MapDomainMessageToDecrypted(&msg)
+						newChatObject.LastReadMessage = &mapped
+					} else if lc.LastReadMessage != nil {
+						mapped := mappers.MapDomainMessageToDecrypted(lc.LastReadMessage)
+						newChatObject.LastReadMessage = &mapped
+					}
+				}
+			} else if lc.LastReadMessage != nil {
+				mapped := mappers.MapDomainMessageToDecrypted(lc.LastReadMessage)
+				newChatObject.LastReadMessage = &mapped
+			}
 		}
 
 		result = append(result, newChatObject)
@@ -413,6 +440,24 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 				if idx, found := resultMap[id]; found {
 					mapped := mappers.MapDomainMessageToDecrypted(&msg)
 					result[idx].LastMessage = &mapped
+				}
+			}
+		}
+
+		if chat.EncryptedLastReadMessage != nil {
+			decLastReadMessage, err := c.messageManager.DecryptMessage(chat.EncryptedLastReadMessage, chatKey, syncKey, userIdentity, recipientIdentity)
+			if err == nil {
+				msg := domain.Message{
+					MessageWithDecryptedData: domain.MessageWithDecryptedData{
+						RawMessageWithReply: *chat.EncryptedLastReadMessage,
+						Message:             *decLastReadMessage,
+					},
+				}
+				messages = append(messages, msg)
+
+				if idx, found := resultMap[id]; found {
+					mapped := mappers.MapDomainMessageToDecrypted(&msg)
+					result[idx].LastReadMessage = &mapped
 				}
 			}
 		}
@@ -584,11 +629,18 @@ func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 			lastMessage = &mapped
 		}
 
+		var lastReadMessage *domain.DecryptedMessageWithReply
+		if chat.LastReadMessage != nil {
+			mapped := mappers.MapDomainMessageToDecrypted(chat.LastReadMessage)
+			lastReadMessage = &mapped
+		}
+
 		newChatObject := ChatResponse{
-			RawChat:     chat.RawChat,
-			Me:          creds.UserJSON,
-			Recipient:   recipientJSON,
-			LastMessage: lastMessage,
+			RawChat:         chat.RawChat,
+			Me:              creds.UserJSON,
+			Recipient:       recipientJSON,
+			LastMessage:     lastMessage,
+			LastReadMessage: lastReadMessage,
 		}
 
 		result = append(result, newChatObject)
