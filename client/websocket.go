@@ -523,5 +523,18 @@ func (c *BloomClient) handleMessageSeenEvent(messageSeenEvent *MessageSeenEvent)
 		return
 	}
 
+	messagesSeenJSON, err := json.Marshal(messageSeenEvent)
+	if err != nil {
+		return
+	}
+
+	c.listenerMu.RLock()
+	messagesSeenListener := c.messagesSeenListener
+	c.listenerMu.RUnlock()
+
+	if messagesSeenListener != nil {
+		messagesSeenListener.OnMessagesSeen(messagesSeenJSON)
+	}
+
 	c.notifyChatsUpdated()
 }

@@ -36,6 +36,10 @@ type MessagesListener interface {
 	OnNewMessage(messageJSON []byte)
 }
 
+type MessagesSeenListener interface {
+	OnMessagesSeen(messagesSeenJSON []byte)
+}
+
 type ReconnectListener interface {
 	OnReconnect()
 }
@@ -67,6 +71,7 @@ type BloomClient struct {
 
 	chatsListener           ChatsListener
 	messagesListener        MessagesListener
+	messagesSeenListener    MessagesSeenListener
 	userListener            UserListener
 	reconnectListener       ReconnectListener
 	backgroundErrorListener BackgroundErrorListener

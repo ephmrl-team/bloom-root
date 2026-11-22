@@ -148,3 +148,16 @@ type DecryptedMessageWithReply struct {
 	DecryptedMessage
 	ReplyTo *DecryptedMessage `json:"reply_to,omitempty"`
 }
+
+type MarkMessagesSeenRequest struct {
+	ChatID   int   `json:"chat_id"`
+	Messages []int `json:"messages"`
+}
+
+type MarkMessagesSeenResponse struct {
+	Type     string    `json:"type"`
+	UserID   string    `json:"user_id"`
+	ChatID   int       `json:"chat_id"`
+	SeenAt   time.Time `json:"seen_at"`
+	Messages []int     `json:"messages"`
+}

@@ -6,6 +6,7 @@ package main
 typedef void (*chats_callback_t)(const char* json_data);
 typedef void (*user_callback_t)(const char* json_data);
 typedef void (*messages_callback_t)(const char* json_data);
+typedef void (*messages_seen_callback_t)(const char* json_data);
 typedef void (*error_callback_t)(const char* json_data);
 
 static inline void call_chats_callback(chats_callback_t cb, const char* json_data) {
@@ -21,6 +22,12 @@ static inline void call_user_callback(user_callback_t cb, const char* json_data)
 }
 
 static inline void call_messages_callback(messages_callback_t cb, const char* json_data) {
+    if (cb != NULL) {
+        cb(json_data);
+    }
+}
+
+static inline void call_messages_seen_callback(messages_seen_callback_t cb, const char* json_data) {
     if (cb != NULL) {
         cb(json_data);
     }
@@ -280,6 +287,23 @@ func SendMessage(chatID C.int, replyToID C.int, content *C.char) *C.char {
 	return C.CString(string(res))
 }
 
+//export MarkMessagesSeen
+func MarkMessagesSeen(chatID C.int, messageIDsJSON *C.char) *C.char {
+	if globalClient == nil {
+		return C.CString(`{"error": "client not initialized"}`)
+	}
+	goMessageIDs := C.GoString(messageIDsJSON)
+	var messageIDs []int
+	if err := json.Unmarshal([]byte(goMessageIDs), &messageIDs); err != nil {
+		return makeErrorJSON(err)
+	}
+	res, err := globalClient.MarkMessagesSeen(nil, int(chatID), messageIDs)
+	if err != nil {
+		return makeErrorJSON(err)
+	}
+	return C.CString(string(res))
+}
+
 //export LoadMessages
 func LoadMessages(chatID C.int, beforeID C.int) *C.char {
 	if globalClient == nil {
@@ -385,6 +409,30 @@ func RegisterMessagesCallback(cb C.messages_callback_t) {
 func UnregisterMessagesCallback() {
 	if globalClient != nil {
 		globalClient.UnregisterMessagesListener()
+	}
+}
+
+type cgoMessagesSeenListener struct {
+	callback C.messages_seen_callback_t
+}
+
+func (l *cgoMessagesSeenListener) OnMessagesSeen(messagesSeenJSON []byte) {
+	cStr := C.CString(string(messagesSeenJSON))
+	defer C.free(unsafe.Pointer(cStr))
+	C.call_messages_seen_callback(l.callback, cStr)
+}
+
+//export RegisterMessagesSeenCallback
+func RegisterMessagesSeenCallback(cb C.messages_seen_callback_t) {
+	if globalClient != nil {
+		globalClient.RegisterMessagesSeenListener(&cgoMessagesSeenListener{callback: cb})
+	}
+}
+
+//export UnregisterMessagesSeenCallback
+func UnregisterMessagesSeenCallback() {
+	if globalClient != nil {
+		globalClient.UnregisterMessagesSeenListener()
 	}
 }
 
