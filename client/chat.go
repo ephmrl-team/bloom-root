@@ -8,8 +8,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/slipe-fun/bloom-kit/domain"
-	"github.com/slipe-fun/bloom-kit/mappers"
+	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/mappers"
 )
 
 type CreateChatRequest struct {

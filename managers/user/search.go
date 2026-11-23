@@ -3,7 +3,7 @@ package user
 import (
 	"context"
 
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (u *UserManager) Search(ctx context.Context, query string) (*[]domain.User, error) {

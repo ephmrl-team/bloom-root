@@ -5,9 +5,9 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/slipe-fun/bloom-kit/crypto"
-	"github.com/slipe-fun/bloom-kit/domain"
-	"github.com/slipe-fun/bloom-kit/mappers"
+	"github.com/ephmrl-team/bloom-root/crypto"
+	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/mappers"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 	"github.com/slipe-fun/skid-v4/pkg/messages"
 	"github.com/slipe-fun/skid-v4/pkg/protocol"

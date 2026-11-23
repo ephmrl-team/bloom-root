@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/slipe-fun/bloom-kit/api"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (a *AuthClient) BeginLogin(ctx context.Context, authLookupID string) (*domain.BeginLoginResponse, error) {

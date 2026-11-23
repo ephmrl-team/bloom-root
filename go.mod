@@ -1,4 +1,4 @@
-module github.com/slipe-fun/bloom-kit
+module github.com/ephmrl-team/bloom-root
 
 go 1.26.4
 

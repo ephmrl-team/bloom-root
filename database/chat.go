@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (d *Database) SaveChat(chat domain.Chat, chatKey, syncKey []byte) error {

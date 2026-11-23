@@ -1,6 +1,6 @@
 package auth
 
-import "github.com/slipe-fun/bloom-kit/api/auth"
+import "github.com/ephmrl-team/bloom-root/api/auth"
 
 type AuthManager struct {
 	authClient *auth.AuthClient

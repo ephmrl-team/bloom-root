@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/slipe-fun/bloom-kit/domain"
-	"github.com/slipe-fun/bloom-kit/mappers"
+	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/mappers"
 )
 
 type EditRequest struct {

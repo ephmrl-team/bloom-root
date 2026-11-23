@@ -1,6 +1,6 @@
 package user
 
-import "github.com/slipe-fun/bloom-kit/api/user"
+import "github.com/ephmrl-team/bloom-root/api/user"
 
 type UserManager struct {
 	userClient *user.UserClient

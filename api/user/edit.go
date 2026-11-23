@@ -3,8 +3,8 @@ package user
 import (
 	"context"
 
-	"github.com/slipe-fun/bloom-kit/api"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (u *UserClient) Edit(ctx context.Context, editUserRequest *domain.EditUserRequest) (*domain.EditUserResponse, error) {

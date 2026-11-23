@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (d *Database) SaveUser(user *domain.User) error {

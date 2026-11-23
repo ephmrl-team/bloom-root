@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/mappers"
 	"github.com/gorilla/websocket"
-	"github.com/slipe-fun/bloom-kit/domain"
-	"github.com/slipe-fun/bloom-kit/mappers"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 )
 

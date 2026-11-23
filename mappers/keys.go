@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/domain"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 	"github.com/slipe-fun/skid-v4/pkg/messages"
 )

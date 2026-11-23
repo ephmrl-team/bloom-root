@@ -1,7 +1,7 @@
 package exchange
 
 import (
-	"github.com/slipe-fun/bloom-kit/api/exchange"
+	"github.com/ephmrl-team/bloom-root/api/exchange"
 )
 
 type ExchangeManager struct {

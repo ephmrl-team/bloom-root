@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/slipe-fun/bloom-kit/crypto"
-	"github.com/slipe-fun/bloom-kit/domain"
-	"github.com/slipe-fun/bloom-kit/mappers"
+	"github.com/ephmrl-team/bloom-root/crypto"
+	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/mappers"
 )
 
 func copyPublicCredentials(creds *domain.SavedCredentials) *domain.SavedCredentials {

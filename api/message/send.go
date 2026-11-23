@@ -3,8 +3,8 @@ package message
 import (
 	"context"
 
-	"github.com/slipe-fun/bloom-kit/api"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (m *MessageClient) Send(ctx context.Context, sendMessageRequest *domain.SendMessageRequest) (*domain.RawMessageWithReply, error) {

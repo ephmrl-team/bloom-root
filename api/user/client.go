@@ -1,7 +1,7 @@
 package user
 
 import (
-	"github.com/slipe-fun/bloom-kit/api"
+	"github.com/ephmrl-team/bloom-root/api"
 )
 
 type UserClient struct {

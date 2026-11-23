@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/slipe-fun/bloom-kit/api/message"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api/message"
+	"github.com/ephmrl-team/bloom-root/domain"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 	"github.com/slipe-fun/skid-v4/pkg/messages"
 )

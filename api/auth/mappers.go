@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/cloudflare/circl/sign/ed448"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/domain"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 )
 

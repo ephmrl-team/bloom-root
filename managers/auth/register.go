@@ -3,8 +3,8 @@ package auth
 import (
 	"context"
 
-	"github.com/slipe-fun/bloom-kit/api/auth"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api/auth"
+	"github.com/ephmrl-team/bloom-root/domain"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 )
 

@@ -1,7 +1,7 @@
 package message
 
 import (
-	"github.com/slipe-fun/bloom-kit/api/message"
+	"github.com/ephmrl-team/bloom-root/api/message"
 )
 
 type MessageManager struct {

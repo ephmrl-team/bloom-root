@@ -3,8 +3,8 @@ package message
 import (
 	"context"
 
-	"github.com/slipe-fun/bloom-kit/api"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (m *MessageClient) Seen(ctx context.Context, markMessagesSeenRequest *domain.MarkMessagesSeenRequest) (*domain.MarkMessagesSeenResponse, error) {

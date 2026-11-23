@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ephmrl-team/bloom-root/domain"
 	"github.com/google/uuid"
-	"github.com/slipe-fun/bloom-kit/domain"
 )
 
 const (

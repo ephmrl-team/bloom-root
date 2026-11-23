@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/slipe-fun/bloom-kit/domain"
-	messageManager "github.com/slipe-fun/bloom-kit/managers/message"
-	"github.com/slipe-fun/bloom-kit/mappers"
+	"github.com/ephmrl-team/bloom-root/domain"
+	messageManager "github.com/ephmrl-team/bloom-root/managers/message"
+	"github.com/ephmrl-team/bloom-root/mappers"
 )
 
 func (c *BloomClient) loadMessagesFromStorage(chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {

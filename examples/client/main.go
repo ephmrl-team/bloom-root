@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/slipe-fun/bloom-kit/client"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/client"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 type MessagesHandler struct {

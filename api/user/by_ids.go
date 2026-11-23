@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/slipe-fun/bloom-kit/api"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (u *UserClient) GetByIDs(ctx context.Context, ids []string) (*[]domain.User, error) {

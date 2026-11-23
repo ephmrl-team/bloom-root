@@ -44,7 +44,7 @@ import (
 	"encoding/json"
 	"unsafe"
 
-	"github.com/slipe-fun/bloom-kit/client"
+	"github.com/ephmrl-team/bloom-root/client"
 )
 
 var globalClient *client.BloomClient

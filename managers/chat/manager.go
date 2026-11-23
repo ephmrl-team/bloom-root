@@ -1,7 +1,7 @@
 package chat
 
 import (
-	"github.com/slipe-fun/bloom-kit/api/chat"
+	"github.com/ephmrl-team/bloom-root/api/chat"
 )
 
 type ChatManager struct {

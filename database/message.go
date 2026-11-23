@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func messageCreatedAt(message *domain.Message) time.Time {

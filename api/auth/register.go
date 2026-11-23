@@ -3,8 +3,8 @@ package auth
 import (
 	"context"
 
-	"github.com/slipe-fun/bloom-kit/api"
-	"github.com/slipe-fun/bloom-kit/domain"
+	"github.com/ephmrl-team/bloom-root/api"
+	"github.com/ephmrl-team/bloom-root/domain"
 )
 
 func (a *AuthClient) Register(ctx context.Context, keys *domain.KeysRequest) (*domain.RegisterResponse, error) {
