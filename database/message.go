@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 )
 
 func messageCreatedAt(message *domain.Message) time.Time {
@@ -105,20 +106,30 @@ func saveMessageTx(tx *sql.Tx, message *domain.Message) error {
 func (d *Database) SaveMessage(message *domain.Message) error {
 	tx, err := d.db.Begin()
 	if err != nil {
+		logger.Error("database", "message transaction failed", "message_id", message.ID, "chat_id", message.ChatID, "error", err)
 		return err
 	}
 	defer tx.Rollback()
 
 	if err := saveMessageTx(tx, message); err != nil {
+		logger.Error("database", "message save failed", "message_id", message.ID, "chat_id", message.ChatID, "error", err)
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		logger.Error("database", "message commit failed", "message_id", message.ID, "chat_id", message.ChatID, "error", err)
+		return err
+	}
+
+	logger.Info("database", "message saved", "message_id", message.ID, "chat_id", message.ChatID)
+
+	return nil
 }
 
 func (d *Database) SaveMessages(messages []domain.Message) error {
 	tx, err := d.db.Begin()
 	if err != nil {
+		logger.Error("database", "messages transaction failed", "count", len(messages), "error", err)
 		return err
 	}
 	defer tx.Rollback()
@@ -128,12 +139,16 @@ func (d *Database) SaveMessages(messages []domain.Message) error {
 		msg := &messages[i]
 
 		if err := saveMessageTx(tx, msg); err != nil {
+			logger.Error("database", "message save failed", "message_id", msg.ID, "chat_id", msg.ChatID, "error", err)
 			errs = append(errs, fmt.Errorf("save message %d (chat %d): %w", msg.ID, msg.ChatID, err))
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
+		logger.Error("database", "messages commit failed", "count", len(messages), "error", err)
 		errs = append(errs, fmt.Errorf("commit messages: %w", err))
+	} else {
+		logger.Info("database", "messages saved", "count", len(messages))
 	}
 
 	return errors.Join(errs...)
@@ -143,6 +158,8 @@ func (d *Database) UpdateMessagesSeen(chatID int, messageIDs []int, seenAt time.
 	if len(messageIDs) == 0 {
 		return nil
 	}
+
+	logger.Info("database", "updating messages seen", "chat_id", chatID, "count", len(messageIDs))
 
 	placeholders := make([]string, len(messageIDs))
 	args := make([]any, 0, len(messageIDs)+2)
@@ -159,8 +176,14 @@ func (d *Database) UpdateMessagesSeen(chatID int, messageIDs []int, seenAt time.
 		WHERE chat_id = ?
 		  AND id IN (%s)
 	`, strings.Join(placeholders, ", ")), args...)
+	if err != nil {
+		logger.Error("database", "messages seen update failed", "chat_id", chatID, "count", len(messageIDs), "error", err)
+		return err
+	}
 
-	return err
+	logger.Info("database", "messages seen updated", "chat_id", chatID, "count", len(messageIDs))
+
+	return nil
 }
 
 func (d *Database) GetMessage(messageID int) (*domain.Message, error) {
@@ -194,6 +217,7 @@ func (d *Database) GetMessage(messageID int) (*domain.Message, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
+		logger.Error("database", "message load failed", "message_id", messageID, "error", err)
 		return nil, err
 	}
 
@@ -201,6 +225,7 @@ func (d *Database) GetMessage(messageID int) (*domain.Message, error) {
 
 	slice := []domain.Message{msg}
 	if err := d.populateReplies(slice); err != nil {
+		logger.Error("database", "message replies load failed", "message_id", messageID, "error", err)
 		return nil, err
 	}
 
@@ -250,6 +275,7 @@ func (d *Database) GetMessages(chatID, beforeID, limit int) ([]domain.Message, e
 
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
+		logger.Error("database", "messages load failed", "chat_id", chatID, "before_id", beforeID, "limit", limit, "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -270,6 +296,7 @@ func (d *Database) GetMessages(chatID, beforeID, limit int) ([]domain.Message, e
 			&msg.Content,
 		)
 		if err != nil {
+			logger.Error("database", "message scan failed", "chat_id", chatID, "error", err)
 			return nil, err
 		}
 
@@ -279,6 +306,7 @@ func (d *Database) GetMessages(chatID, beforeID, limit int) ([]domain.Message, e
 	}
 
 	if err := rows.Err(); err != nil {
+		logger.Error("database", "messages read failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
@@ -287,8 +315,11 @@ func (d *Database) GetMessages(chatID, beforeID, limit int) ([]domain.Message, e
 	}
 
 	if err := d.populateReplies(messages); err != nil {
+		logger.Error("database", "messages replies load failed", "chat_id", chatID, "count", len(messages), "error", err)
 		return nil, err
 	}
+
+	logger.Info("database", "messages loaded", "chat_id", chatID, "count", len(messages))
 
 	return messages, nil
 }
@@ -326,6 +357,7 @@ func (d *Database) GetChatLastMessage(chatID int) (*domain.Message, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
+		logger.Error("database", "last message load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
@@ -333,6 +365,7 @@ func (d *Database) GetChatLastMessage(chatID int) (*domain.Message, error) {
 
 	slice := []domain.Message{msg}
 	if err := d.populateReplies(slice); err != nil {
+		logger.Error("database", "last message replies load failed", "chat_id", chatID, "message_id", msg.ID, "error", err)
 		return nil, err
 	}
 
@@ -387,6 +420,7 @@ func (d *Database) GetChatsLastMessages(chatIDs []int) (map[int]*domain.Message,
 
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
+		logger.Error("database", "last messages load failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -407,6 +441,7 @@ func (d *Database) GetChatsLastMessages(chatIDs []int) (map[int]*domain.Message,
 			&msg.Content,
 		)
 		if err != nil {
+			logger.Error("database", "last message scan failed", "chat_count", len(chatIDs), "error", err)
 			return nil, err
 		}
 
@@ -416,16 +451,20 @@ func (d *Database) GetChatsLastMessages(chatIDs []int) (map[int]*domain.Message,
 	}
 
 	if err := rows.Err(); err != nil {
+		logger.Error("database", "last messages read failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 
 	if err := d.populateReplies(messages); err != nil {
+		logger.Error("database", "last messages replies load failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 
 	for i := range messages {
 		result[messages[i].ChatID] = &messages[i]
 	}
+
+	logger.Info("database", "last messages loaded", "chat_count", len(chatIDs), "count", len(result))
 
 	return result, nil
 }
@@ -464,6 +503,7 @@ func (d *Database) GetChatLastReadMessage(chatID int) (*domain.Message, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
+		logger.Error("database", "last read message load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
@@ -471,6 +511,7 @@ func (d *Database) GetChatLastReadMessage(chatID int) (*domain.Message, error) {
 
 	slice := []domain.Message{msg}
 	if err := d.populateReplies(slice); err != nil {
+		logger.Error("database", "last read message replies load failed", "chat_id", chatID, "message_id", msg.ID, "error", err)
 		return nil, err
 	}
 
@@ -526,6 +567,7 @@ func (d *Database) GetChatsLastReadMessages(chatIDs []int) (map[int]*domain.Mess
 
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
+		logger.Error("database", "last read messages load failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -546,6 +588,7 @@ func (d *Database) GetChatsLastReadMessages(chatIDs []int) (map[int]*domain.Mess
 			&msg.Content,
 		)
 		if err != nil {
+			logger.Error("database", "last read message scan failed", "chat_count", len(chatIDs), "error", err)
 			return nil, err
 		}
 
@@ -555,16 +598,20 @@ func (d *Database) GetChatsLastReadMessages(chatIDs []int) (map[int]*domain.Mess
 	}
 
 	if err := rows.Err(); err != nil {
+		logger.Error("database", "last read messages read failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 
 	if err := d.populateReplies(messages); err != nil {
+		logger.Error("database", "last read messages replies load failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 
 	for i := range messages {
 		result[messages[i].ChatID] = &messages[i]
 	}
+
+	logger.Info("database", "last read messages loaded", "chat_count", len(chatIDs), "count", len(result))
 
 	return result, nil
 }
@@ -607,6 +654,7 @@ func (d *Database) populateReplies(messages []domain.Message) error {
 
 	replyRows, err := d.db.Query(query, ids...)
 	if err != nil {
+		logger.Error("database", "replies load failed", "count", len(replyIDsMap), "error", err)
 		return err
 	}
 	defer replyRows.Close()
@@ -625,6 +673,7 @@ func (d *Database) populateReplies(messages []domain.Message) error {
 			&reply.Content,
 		)
 		if err != nil {
+			logger.Error("database", "reply scan failed", "count", len(replyIDsMap), "error", err)
 			return err
 		}
 
@@ -634,6 +683,7 @@ func (d *Database) populateReplies(messages []domain.Message) error {
 	}
 
 	if err := replyRows.Err(); err != nil {
+		logger.Error("database", "replies read failed", "count", len(replyIDsMap), "error", err)
 		return err
 	}
 

@@ -9,16 +9,19 @@ import (
 	"strings"
 
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 )
 
 func (d *Database) SaveChat(chat domain.Chat, chatKey, syncKey []byte) error {
 	membersJSON, err := json.Marshal(chat.Members)
 	if err != nil {
+		logger.Error("database", "chat members marshal failed", "chat_id", chat.ID, "error", err)
 		return err
 	}
 
 	handshakeJSON, err := json.Marshal(chat.Handshake)
 	if err != nil {
+		logger.Error("database", "chat handshake marshal failed", "chat_id", chat.ID, "error", err)
 		return err
 	}
 
@@ -35,8 +38,11 @@ func (d *Database) SaveChat(chat domain.Chat, chatKey, syncKey []byte) error {
 			sync_key = excluded.sync_key;
 	`, chat.ID, string(membersJSON), string(handshakeJSON), encodedChatKey, encodedSyncKey, chat.CreatedAt)
 	if err != nil {
+		logger.Error("database", "chat save failed", "chat_id", chat.ID, "error", err)
 		return err
 	}
+
+	logger.Info("database", "chat saved", "chat_id", chat.ID)
 
 	return nil
 }
@@ -44,6 +50,7 @@ func (d *Database) SaveChat(chat domain.Chat, chatKey, syncKey []byte) error {
 func (d *Database) SaveChats(chats []domain.ChatWithKeys) error {
 	tx, err := d.db.Begin()
 	if err != nil {
+		logger.Error("database", "chats transaction failed", "count", len(chats), "error", err)
 		return err
 	}
 	defer tx.Rollback()
@@ -65,6 +72,7 @@ func (d *Database) SaveChats(chats []domain.ChatWithKeys) error {
 			sync_key = excluded.sync_key;
 	`)
 	if err != nil {
+		logger.Error("database", "chats prepare failed", "count", len(chats), "error", err)
 		return err
 	}
 	defer stmt.Close()
@@ -72,11 +80,13 @@ func (d *Database) SaveChats(chats []domain.ChatWithKeys) error {
 	for _, chat := range chats {
 		membersJSON, err := json.Marshal(chat.Members)
 		if err != nil {
+			logger.Error("database", "chat members marshal failed", "chat_id", chat.ID, "error", err)
 			return err
 		}
 
 		handshakeJSON, err := json.Marshal(chat.Handshake)
 		if err != nil {
+			logger.Error("database", "chat handshake marshal failed", "chat_id", chat.ID, "error", err)
 			return err
 		}
 
@@ -92,11 +102,19 @@ func (d *Database) SaveChats(chats []domain.ChatWithKeys) error {
 			chat.CreatedAt,
 		)
 		if err != nil {
+			logger.Error("database", "chat save failed", "chat_id", chat.ID, "error", err)
 			return err
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		logger.Error("database", "chats commit failed", "count", len(chats), "error", err)
+		return err
+	}
+
+	logger.Info("database", "chats saved", "count", len(chats))
+
+	return nil
 }
 
 func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
@@ -119,24 +137,29 @@ func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
+		logger.Error("database", "chat load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
 	if err := json.Unmarshal([]byte(membersJSON), &chat.Members); err != nil {
+		logger.Error("database", "chat members unmarshal failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
 	if err := json.Unmarshal([]byte(handshakeJSON), &chat.Handshake); err != nil {
+		logger.Error("database", "chat handshake unmarshal failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
 	chatKeyBytes, err := base64.StdEncoding.DecodeString(encodedChatKey)
 	if err != nil {
+		logger.Error("database", "chat key decode failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
 	syncKeyBytes, err := base64.StdEncoding.DecodeString(encodedSyncKey)
 	if err != nil {
+		logger.Error("database", "chat sync key decode failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
@@ -158,6 +181,8 @@ func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
 	}
 	chatWithKeys.LastReadMessage = lastReadMsg
 
+	logger.Info("database", "chat loaded", "chat_id", chatID)
+
 	return chatWithKeys, nil
 }
 
@@ -167,6 +192,7 @@ func (d *Database) GetChats() ([]domain.ChatWithKeys, error) {
 		FROM chats
 	`)
 	if err != nil {
+		logger.Error("database", "chats load failed", "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -191,24 +217,29 @@ func (d *Database) GetChats() ([]domain.ChatWithKeys, error) {
 			&encodedSyncKey,
 			&chat.CreatedAt,
 		); err != nil {
+			logger.Error("database", "chat scan failed", "error", err)
 			return nil, err
 		}
 
 		if err := json.Unmarshal([]byte(membersJSON), &chat.Members); err != nil {
+			logger.Error("database", "chat members unmarshal failed", "chat_id", chat.ID, "error", err)
 			return nil, err
 		}
 
 		if err := json.Unmarshal([]byte(handshakeJSON), &chat.Handshake); err != nil {
+			logger.Error("database", "chat handshake unmarshal failed", "chat_id", chat.ID, "error", err)
 			return nil, err
 		}
 
 		chatKeyBytes, err := base64.StdEncoding.DecodeString(encodedChatKey)
 		if err != nil {
+			logger.Error("database", "chat key decode failed", "chat_id", chat.ID, "error", err)
 			return nil, err
 		}
 
 		syncKeyBytes, err := base64.StdEncoding.DecodeString(encodedSyncKey)
 		if err != nil {
+			logger.Error("database", "chat sync key decode failed", "chat_id", chat.ID, "error", err)
 			return nil, err
 		}
 
@@ -222,6 +253,7 @@ func (d *Database) GetChats() ([]domain.ChatWithKeys, error) {
 	}
 
 	if err := rows.Err(); err != nil {
+		logger.Error("database", "chats read failed", "error", err)
 		return nil, err
 	}
 
@@ -242,28 +274,36 @@ func (d *Database) GetChats() ([]domain.ChatWithKeys, error) {
 		}
 	}
 
+	logger.Info("database", "chats loaded", "count", len(chats))
+
 	return chats, nil
 }
 
 func (d *Database) EditChatMembers(chatID int, newMembers []domain.User) error {
 	membersJSON, err := json.Marshal(newMembers)
 	if err != nil {
+		logger.Error("database", "chat members marshal failed", "chat_id", chatID, "error", err)
 		return err
 	}
 
 	query := `UPDATE chats SET members = ? WHERE id = ?;`
 	result, err := d.db.Exec(query, string(membersJSON), chatID)
 	if err != nil {
+		logger.Error("database", "chat members update failed", "chat_id", chatID, "error", err)
 		return err
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
+		logger.Error("database", "chat members affected rows failed", "chat_id", chatID, "error", err)
 		return err
 	}
 	if rowsAffected == 0 {
+		logger.Warn("database", "chat not found", "chat_id", chatID)
 		return fmt.Errorf("chat with ID %d not found", chatID)
 	}
+
+	logger.Info("database", "chat members updated", "chat_id", chatID, "count", len(newMembers))
 
 	return nil
 }
@@ -289,6 +329,7 @@ func (d *Database) GetMissingChatIDs(chatIDs []int) ([]int, error) {
 
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
+		logger.Error("database", "missing chats lookup failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -298,12 +339,14 @@ func (d *Database) GetMissingChatIDs(chatIDs []int) ([]int, error) {
 	for rows.Next() {
 		var id int
 		if err := rows.Scan(&id); err != nil {
+			logger.Error("database", "missing chats scan failed", "chat_count", len(chatIDs), "error", err)
 			return nil, err
 		}
 		existing[id] = struct{}{}
 	}
 
 	if err := rows.Err(); err != nil {
+		logger.Error("database", "missing chats read failed", "chat_count", len(chatIDs), "error", err)
 		return nil, err
 	}
 
@@ -313,6 +356,8 @@ func (d *Database) GetMissingChatIDs(chatIDs []int) ([]int, error) {
 			missing = append(missing, id)
 		}
 	}
+
+	logger.Info("database", "missing chats checked", "chat_count", len(chatIDs), "missing_count", len(missing))
 
 	return missing, nil
 }

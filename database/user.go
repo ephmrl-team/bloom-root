@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 )
 
 func (d *Database) SaveUser(user *domain.User) error {
@@ -19,8 +20,11 @@ func (d *Database) SaveUser(user *domain.User) error {
 		    date = excluded.date;
 	`, user.ID, user.Username, user.DisplayName, user.Description, user.MlKemPublicKey, user.EcdhPublicKey, user.EdPublicKey, user.Date)
 	if err != nil {
+		logger.Error("database", "user save failed", "user_id", user.ID, "error", err)
 		return err
 	}
+
+	logger.Info("database", "user saved", "user_id", user.ID)
 
 	return nil
 }
@@ -28,6 +32,7 @@ func (d *Database) SaveUser(user *domain.User) error {
 func (d *Database) SaveUsers(users []domain.User) error {
 	tx, err := d.db.Begin()
 	if err != nil {
+		logger.Error("database", "users transaction failed", "count", len(users), "error", err)
 		return err
 	}
 	defer tx.Rollback()
@@ -42,6 +47,7 @@ func (d *Database) SaveUsers(users []domain.User) error {
 			date = excluded.date;
 	`)
 	if err != nil {
+		logger.Error("database", "users statement prepare failed", "count", len(users), "error", err)
 		return err
 	}
 	defer stmt.Close()
@@ -61,12 +67,16 @@ func (d *Database) SaveUsers(users []domain.User) error {
 			user.Date,
 		)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("save user %q (%s): %w", user.Username, user.ID, err))
+			logger.Error("database", "user save failed", "user_id", user.ID, "error", err)
+			errs = append(errs, fmt.Errorf("save user %s: %w", user.ID, err))
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
+		logger.Error("database", "users commit failed", "count", len(users), "error", err)
 		errs = append(errs, fmt.Errorf("commit users: %w", err))
+	} else {
+		logger.Info("database", "users saved", "count", len(users))
 	}
 
 	return errors.Join(errs...)
@@ -87,6 +97,7 @@ func (d *Database) GetUser(userID string) (*domain.User, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
+		logger.Error("database", "user load failed", "user_id", userID, "error", err)
 		return nil, err
 	}
 

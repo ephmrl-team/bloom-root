@@ -7,19 +7,24 @@ import (
 	"sort"
 
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 	messageManager "github.com/ephmrl-team/bloom-root/managers/message"
 	"github.com/ephmrl-team/bloom-root/mappers"
 )
 
 func (c *BloomClient) loadMessagesFromStorage(chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {
 	if _, err := c.getCredentials(); err != nil {
+		logger.Error("message", "messages load failed", "chat_id", chatID, "before_id", beforeID, "error", err)
 		return nil, err
 	}
 
 	messagesFromStorage, err := c.database.GetMessages(chatID, beforeID, 20)
 	if err != nil {
+		logger.Error("message", "messages storage load failed", "chat_id", chatID, "before_id", beforeID, "error", err)
 		return nil, err
 	}
+
+	logger.Success("message", "messages loaded from storage", "chat_id", chatID, "before_id", beforeID, "count", len(messagesFromStorage))
 
 	return mappers.MapDomainMessagesToDecrypted(messagesFromStorage), nil
 }
@@ -27,14 +32,17 @@ func (c *BloomClient) loadMessagesFromStorage(chatID, beforeID int) ([]domain.De
 func (c *BloomClient) getChatMessages(ctx context.Context, chatID, messageID int, direction messageManager.Direction) ([]domain.Message, error) {
 	creds, err := c.getCredentials()
 	if err != nil {
+		logger.Error("message", "messages load failed", "chat_id", chatID, "message_id", messageID, "error", err)
 		return nil, err
 	}
 
 	chat, err := c.getChatContext(ctx, chatID)
 	if err != nil {
+		logger.Error("message", "chat load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 	if chat == nil {
+		logger.Warn("message", "chat not found", "chat_id", chatID)
 		return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
 	}
 
@@ -42,16 +50,19 @@ func (c *BloomClient) getChatMessages(ctx context.Context, chatID, messageID int
 		RawChat: chat.RawChat,
 	}, creds.UserID)
 	if err != nil {
+		logger.Warn("message", "chat recipient lookup failed", "chat_id", chatID, "user_id", creds.UserID, "error", err)
 		return nil, err
 	}
 
 	recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
 	if err != nil {
+		logger.Warn("message", "recipient identity failed", "chat_id", chatID, "user_id", recipient.ID, "error", err)
 		return nil, fmt.Errorf("%w: failed to build recipient identity: %w", domain.ErrInvalidUserIdentity, err)
 	}
 
 	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
 	if err != nil {
+		logger.Error("message", "user identity build failed", "chat_id", chatID, "user_id", creds.UserID, "error", err)
 		return nil, err
 	}
 
@@ -66,12 +77,15 @@ func (c *BloomClient) getChatMessages(ctx context.Context, chatID, messageID int
 		recipientIdentity,
 	)
 	if err != nil {
+		logger.Error("message", "messages load failed", "chat_id", chatID, "message_id", messageID, "error", err)
 		return nil, err
 	}
 
 	sort.SliceStable(messages, func(i, j int) bool {
 		return messages[i].ID < messages[j].ID
 	})
+
+	logger.Success("message", "messages loaded", "chat_id", chatID, "message_id", messageID, "count", len(messages))
 
 	return messages, nil
 }
@@ -87,23 +101,28 @@ func (c *BloomClient) getChatMessagesAfter(ctx context.Context, chatID, afterID 
 func (c *BloomClient) loadMessagesFromServer(ctx context.Context, chatID, beforeID int) ([]domain.Message, error) {
 	messages, err := c.getChatMessagesBefore(ctx, chatID, beforeID)
 	if err != nil {
+		logger.Error("message", "messages load failed", "chat_id", chatID, "before_id", beforeID, "error", err)
 		return nil, err
 	}
 
 	if len(messages) == 0 {
+		logger.Info("message", "no messages found", "chat_id", chatID, "before_id", beforeID)
 		return messages, nil
 	}
 
 	if err := c.database.SaveMessages(messages); err != nil {
+		logger.Error("message", "messages save failed", "chat_id", chatID, "count", len(messages), "error", err)
 		return nil, err
 	}
 
 	oldestContiguousID, err := c.database.GetChatOldestContiguousID(chatID)
 	if err != nil {
+		logger.Error("message", "oldest message state load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 	newestContiguousID, err := c.database.GetChatNewestContiguousID(chatID)
 	if err != nil {
+		logger.Error("message", "newest message state load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
@@ -125,11 +144,15 @@ func (c *BloomClient) loadMessagesFromServer(ctx context.Context, chatID, before
 	}
 
 	if err := c.database.SetChatOldestContiguousID(chatID, oldestContiguousID); err != nil {
+		logger.Error("message", "oldest message state save failed", "chat_id", chatID, "message_id", oldestContiguousID, "error", err)
 		return nil, err
 	}
 	if err := c.database.SetChatNewestContiguousID(chatID, newestContiguousID); err != nil {
+		logger.Error("message", "newest message state save failed", "chat_id", chatID, "message_id", newestContiguousID, "error", err)
 		return nil, err
 	}
+
+	logger.Success("message", "messages loaded from server", "chat_id", chatID, "before_id", beforeID, "count", len(messages))
 
 	return messages, nil
 }
@@ -144,19 +167,24 @@ func (c *BloomClient) fillMessagesGap(ctx context.Context, chatID, afterID, stop
 	for cursor < stopBeforeID {
 		page, err := c.getChatMessagesAfter(ctx, chatID, cursor)
 		if err != nil || len(page) == 0 {
+			logger.Warn("message", "message gap fill stopped", "chat_id", chatID, "after_id", cursor, "stop_before_id", stopBeforeID, "error", err)
 			return false
 		}
 
 		if err := c.database.SaveMessages(page); err != nil {
+			logger.Warn("message", "message gap save failed", "chat_id", chatID, "count", len(page), "error", err)
 			return false
 		}
 
 		cursor = page[len(page)-1].ID
 
 		if err := c.database.SetChatNewestContiguousID(chatID, cursor); err != nil {
+			logger.Warn("message", "message gap state save failed", "chat_id", chatID, "message_id", cursor, "error", err)
 			return false
 		}
 	}
+
+	logger.Success("message", "message gap filled", "chat_id", chatID, "after_id", afterID, "stop_before_id", stopBeforeID)
 
 	return true
 }
@@ -164,23 +192,28 @@ func (c *BloomClient) fillMessagesGap(ctx context.Context, chatID, afterID, stop
 func (c *BloomClient) loadInitialMessages(ctx context.Context, chatID int) ([]domain.Message, error) {
 	messages, err := c.getChatMessagesAfter(ctx, chatID, 0)
 	if err != nil {
+		logger.Warn("message", "initial messages load failed, using local cache", "chat_id", chatID, "error", err)
 		return c.database.GetMessages(chatID, 0, 20)
 	}
 
 	if len(messages) == 0 {
+		logger.Info("message", "no initial messages found", "chat_id", chatID)
 		return messages, nil
 	}
 
 	if err := c.database.SaveMessages(messages); err != nil {
+		logger.Error("message", "initial messages save failed", "chat_id", chatID, "count", len(messages), "error", err)
 		return nil, err
 	}
 
 	oldestContiguousID, err := c.database.GetChatOldestContiguousID(chatID)
 	if err != nil {
+		logger.Error("message", "oldest message state load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 	newestContiguousID, err := c.database.GetChatNewestContiguousID(chatID)
 	if err != nil {
+		logger.Error("message", "newest message state load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
@@ -203,6 +236,7 @@ func (c *BloomClient) loadInitialMessages(ctx context.Context, chatID int) ([]do
 
 		newestContiguousID, err = c.database.GetChatNewestContiguousID(chatID)
 		if err != nil {
+			logger.Error("message", "newest message state load failed", "chat_id", chatID, "error", err)
 			return nil, err
 		}
 
@@ -212,11 +246,15 @@ func (c *BloomClient) loadInitialMessages(ctx context.Context, chatID int) ([]do
 	}
 
 	if err := c.database.SetChatOldestContiguousID(chatID, oldestContiguousID); err != nil {
+		logger.Error("message", "oldest message state save failed", "chat_id", chatID, "message_id", oldestContiguousID, "error", err)
 		return nil, err
 	}
 	if err := c.database.SetChatNewestContiguousID(chatID, newestContiguousID); err != nil {
+		logger.Error("message", "newest message state save failed", "chat_id", chatID, "message_id", newestContiguousID, "error", err)
 		return nil, err
 	}
+
+	logger.Success("message", "initial messages loaded", "chat_id", chatID, "count", len(messages))
 
 	return messages, nil
 }
@@ -264,6 +302,7 @@ func (c *BloomClient) sendMessage(ctx context.Context, chatID int, replyToID *in
 	c.sendMu.Lock()
 	if inflight, ok := c.sendInflight[key]; ok {
 		c.sendMu.Unlock()
+		logger.Info("message", "send deduplicated", "chat_id", chatID, "reply_id", replyToValue(replyToID), "content_length", len(content))
 
 		select {
 		case <-inflight.done:
@@ -291,16 +330,21 @@ func (c *BloomClient) sendMessage(ctx context.Context, chatID int, replyToID *in
 }
 
 func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID *int, content string) (*domain.DecryptedMessageWithReply, error) {
+	logger.Info("message", "message send started", "chat_id", chatID, "reply_id", replyToValue(replyToID), "content_length", len(content))
+
 	creds, err := c.getCredentials()
 	if err != nil {
+		logger.Error("message", "message send failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
 	chat, err := c.getChatContext(ctx, chatID)
 	if err != nil {
+		logger.Error("message", "chat load failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 	if chat == nil {
+		logger.Warn("message", "chat not found", "chat_id", chatID)
 		return nil, fmt.Errorf("%w: chat %d not found", domain.ErrInvalidChat, chatID)
 	}
 
@@ -308,37 +352,44 @@ func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID
 		RawChat: chat.RawChat,
 	}, creds.UserID)
 	if err != nil {
+		logger.Warn("message", "chat recipient lookup failed", "chat_id", chatID, "user_id", creds.UserID, "error", err)
 		return nil, err
 	}
 
 	recipientIdentity, err := mappers.ConvertUserToIdentity(recipient)
 	if err != nil {
+		logger.Warn("message", "recipient identity failed", "chat_id", chatID, "user_id", recipient.ID, "error", err)
 		return nil, fmt.Errorf("%w: failed to build recipient identity: %w", domain.ErrInvalidUserIdentity, err)
 	}
 
 	userIdentity, err := mappers.ConvertCredentialsToUser(creds)
 	if err != nil {
+		logger.Error("message", "user identity build failed", "chat_id", chatID, "user_id", creds.UserID, "error", err)
 		return nil, err
 	}
 
 	clientMessageID, err := c.pendingClientMessageID(chatID, replyToID, content)
 	if err != nil {
+		logger.Error("message", "client message id failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
 
 	message, err := c.messageManager.Send(ctx, clientMessageID, content, chatID, replyToID, chat.ChatKey, chat.SyncKey, userIdentity, recipientIdentity)
 	if err != nil {
+		logger.Error("message", "message send failed", "chat_id", chatID, "client_message_id", clientMessageID, "error", err)
 		if rememberErr := c.rememberPendingSend(chatID, replyToID, content, clientMessageID); rememberErr != nil {
+			logger.Error("message", "pending send save failed", "chat_id", chatID, "client_message_id", clientMessageID, "error", rememberErr)
 			return nil, fmt.Errorf("%w: failed to remember pending send: %w", err, rememberErr)
 		}
 		return nil, err
 	}
 
 	if err := c.database.SaveMessage(message); err != nil {
-		fmt.Println("failed to save message:", err)
+		logger.Warn("message", "message save failed", "chat_id", chatID, "message_id", message.ID, "error", err)
 	}
 
 	if err := c.forgetPendingSend(chatID, replyToID, content); err != nil {
+		logger.Error("message", "pending send delete failed", "chat_id", chatID, "message_id", message.ID, "error", err)
 		return nil, err
 	}
 
@@ -356,6 +407,8 @@ func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID
 		}
 	}
 
+	logger.Success("message", "message sent", "chat_id", chatID, "message_id", message.ID, "author_id", userIdentity.ID, "reply_id", replyToValue(replyToID))
+
 	return &domain.DecryptedMessageWithReply{
 		DecryptedMessage: domain.DecryptedMessage{
 			ID:        message.ID,
@@ -371,8 +424,11 @@ func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID
 
 func (c *BloomClient) SendMessage(token *CancelToken, chatID int, replyToID int, content string) ([]byte, error) {
 	if _, err := c.getCredentials(); err != nil {
+		logger.Error("message", "message send failed", "chat_id", chatID, "error", err)
 		return nil, err
 	}
+
+	logger.Info("message", "sending message", "chat_id", chatID, "reply_id", replyToID, "content_length", len(content))
 
 	var replyToPtr *int
 	if replyToID >= 0 {
@@ -381,59 +437,93 @@ func (c *BloomClient) SendMessage(token *CancelToken, chatID int, replyToID int,
 
 	message, err := c.sendMessage(token.context(), chatID, replyToPtr, content)
 	if err != nil {
+		logger.Error("message", "message send failed", "chat_id", chatID, "reply_id", replyToID, "error", err)
 		return nil, err
 	}
 
-	return json.Marshal(message)
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		logger.Error("message", "message marshal failed", "chat_id", chatID, "message_id", message.ID, "error", err)
+		return nil, err
+	}
+
+	logger.Success("message", "message send completed", "chat_id", chatID, "message_id", message.ID, "reply_id", replyToID)
+
+	return messageJSON, nil
 }
 
 func (c *BloomClient) LoadMessages(token *CancelToken, sourceType string, chatID, beforeID int) ([]domain.DecryptedMessageWithReply, error) {
 	if _, err := c.getCredentials(); err != nil {
+		logger.Error("message", "messages load failed", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "error", err)
 		return nil, err
 	}
 
+	logger.Info("message", "loading messages", "chat_id", chatID, "source", sourceType, "before_id", beforeID)
+
 	if sourceType == "storage" {
-		return c.loadMessagesFromStorage(chatID, beforeID)
+		messages, err := c.loadMessagesFromStorage(chatID, beforeID)
+		if err != nil {
+			logger.Error("message", "messages load failed", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "error", err)
+			return nil, err
+		}
+		logger.Success("message", "messages loaded", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "count", len(messages))
+		return messages, nil
 	}
 
 	if beforeID <= 0 {
 		messages, err := c.loadInitialMessages(token.context(), chatID)
 		if err != nil {
+			logger.Error("message", "messages load failed", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "error", err)
 			return nil, err
 		}
 
-		return mappers.MapDomainMessagesToDecrypted(messages), nil
+		decrypted := mappers.MapDomainMessagesToDecrypted(messages)
+		logger.Success("message", "messages loaded", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "count", len(decrypted))
+		return decrypted, nil
 	}
 
 	if sourceType == "server" {
 		messages, err := c.loadMessagesFromServer(token.context(), chatID, beforeID)
 		if err != nil {
+			logger.Error("message", "messages load failed", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "error", err)
 			return nil, err
 		}
 
-		return mappers.MapDomainMessagesToDecrypted(messages), nil
+		decrypted := mappers.MapDomainMessagesToDecrypted(messages)
+		logger.Success("message", "messages loaded", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "count", len(decrypted))
+		return decrypted, nil
 	}
 
 	messages, err := c.loadMessagesAuto(token.context(), chatID, beforeID)
 	if err != nil {
+		logger.Error("message", "messages load failed", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "error", err)
 		return nil, err
 	}
 
-	return mappers.MapDomainMessagesToDecrypted(messages), nil
+	decrypted := mappers.MapDomainMessagesToDecrypted(messages)
+	logger.Success("message", "messages loaded", "chat_id", chatID, "source", sourceType, "before_id", beforeID, "count", len(decrypted))
+
+	return decrypted, nil
 }
 
 func (c *BloomClient) SyncMessages(token *CancelToken, chatID, afterID int) ([]domain.DecryptedMessageWithReply, error) {
 	if _, err := c.getCredentials(); err != nil {
+		logger.Error("message", "messages sync failed", "chat_id", chatID, "after_id", afterID, "error", err)
 		return nil, err
 	}
+
+	logger.Info("message", "syncing messages", "chat_id", chatID, "after_id", afterID)
 
 	if afterID <= 0 {
 		messages, err := c.loadInitialMessages(token.context(), chatID)
 		if err != nil {
+			logger.Error("message", "messages sync failed", "chat_id", chatID, "after_id", afterID, "error", err)
 			return nil, err
 		}
 
-		return mappers.MapDomainMessagesToDecrypted(messages), nil
+		decrypted := mappers.MapDomainMessagesToDecrypted(messages)
+		logger.Success("message", "messages synced", "chat_id", chatID, "after_id", afterID, "count", len(decrypted))
+		return decrypted, nil
 	}
 
 	var result []domain.Message
@@ -442,6 +532,7 @@ func (c *BloomClient) SyncMessages(token *CancelToken, chatID, afterID int) ([]d
 	for {
 		page, err := c.getChatMessagesAfter(token.context(), chatID, cursor)
 		if err != nil {
+			logger.Error("message", "messages sync page failed", "chat_id", chatID, "after_id", cursor, "error", err)
 			return nil, err
 		}
 		if len(page) == 0 {
@@ -449,6 +540,7 @@ func (c *BloomClient) SyncMessages(token *CancelToken, chatID, afterID int) ([]d
 		}
 
 		if err := c.database.SaveMessages(page); err != nil {
+			logger.Error("message", "messages sync save failed", "chat_id", chatID, "count", len(page), "error", err)
 			return nil, err
 		}
 
@@ -460,17 +552,24 @@ func (c *BloomClient) SyncMessages(token *CancelToken, chatID, afterID int) ([]d
 		}
 	}
 
-	return mappers.MapDomainMessagesToDecrypted(result), nil
+	decrypted := mappers.MapDomainMessagesToDecrypted(result)
+	logger.Success("message", "messages synced", "chat_id", chatID, "after_id", afterID, "count", len(decrypted))
+
+	return decrypted, nil
 }
 
 func (c *BloomClient) RegisterMessagesListener(listener MessagesListener) {
 	c.listenerMu.Lock()
 	c.messagesListener = listener
 	c.listenerMu.Unlock()
+
+	logger.Info("message", "messages listener registered")
 }
 
 func (c *BloomClient) UnregisterMessagesListener() {
 	c.listenerMu.Lock()
 	c.messagesListener = nil
 	c.listenerMu.Unlock()
+
+	logger.Info("message", "messages listener unregistered")
 }

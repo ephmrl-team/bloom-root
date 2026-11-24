@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 )
 
 func (d *Database) GetPendingSend(chatID, replyTo int, contentHash string, notBefore time.Time) (*domain.PendingSend, error) {
@@ -27,6 +28,7 @@ func (d *Database) GetPendingSend(chatID, replyTo int, contentHash string, notBe
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
+		logger.Error("database", "pending send load failed", "chat_id", chatID, "reply_to", replyTo, "error", err)
 		return nil, err
 	}
 
@@ -53,8 +55,14 @@ func (d *Database) SavePendingSend(pending *domain.PendingSend) error {
 		pending.ClientMessageID,
 		pending.CreatedAt.UTC(),
 	)
+	if err != nil {
+		logger.Error("database", "pending send save failed", "chat_id", pending.ChatID, "reply_to", pending.ReplyTo, "error", err)
+		return err
+	}
 
-	return err
+	logger.Info("database", "pending send saved", "chat_id", pending.ChatID, "reply_to", pending.ReplyTo)
+
+	return nil
 }
 
 func (d *Database) DeletePendingSend(chatID, replyTo int, contentHash string) error {
@@ -62,15 +70,33 @@ func (d *Database) DeletePendingSend(chatID, replyTo int, contentHash string) er
 		DELETE FROM pending_sends
 		WHERE chat_id = ? AND reply_to = ? AND content_hash = ?
 	`, chatID, replyTo, contentHash)
+	if err != nil {
+		logger.Error("database", "pending send delete failed", "chat_id", chatID, "reply_to", replyTo, "error", err)
+		return err
+	}
 
-	return err
+	logger.Info("database", "pending send deleted", "chat_id", chatID, "reply_to", replyTo)
+
+	return nil
 }
 
 func (d *Database) DeleteExpiredPendingSends(before time.Time) error {
-	_, err := d.db.Exec(`
+	result, err := d.db.Exec(`
 		DELETE FROM pending_sends
 		WHERE created_at < ?
 	`, before.UTC())
+	if err != nil {
+		logger.Error("database", "expired pending sends delete failed", "error", err)
+		return err
+	}
 
-	return err
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		logger.Warn("database", "expired pending sends count failed", "error", err)
+		return nil
+	}
+
+	logger.Info("database", "expired pending sends deleted", "count", deleted)
+
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	userClient "github.com/ephmrl-team/bloom-root/api/user"
 	"github.com/ephmrl-team/bloom-root/database"
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 	authManager "github.com/ephmrl-team/bloom-root/managers/auth"
 	chatManager "github.com/ephmrl-team/bloom-root/managers/chat"
 	exchangeManager "github.com/ephmrl-team/bloom-root/managers/exchange"
@@ -160,24 +162,39 @@ func (c *BloomClient) Initialize() error {
 		return nil
 	}
 
+	if err := logger.Init(c.storagePath); err != nil {
+		fmt.Println("failed to initialize logger:", err)
+	}
+
+	logger.Info("client", "initializing")
+
 	dbKey := make([]byte, len(c.encryptionKey))
 	copy(dbKey, c.encryptionKey)
 	db, err := database.NewDatabase(dbKey, c.storagePath)
 	if err != nil {
+		logger.Error("client", "database open failed", "error", err)
 		return err
 	}
 
+	logger.Success("client", "database opened")
+
 	if err := db.DeleteExpiredPendingSends(time.Now().UTC().Add(-pendingSendRetention)); err != nil {
+		logger.Error("client", "expired pending sends cleanup failed", "error", err)
 		_ = db.Close()
 		return fmt.Errorf("failed to delete expired pending sends: %w", err)
 	}
 
+	logger.Info("client", "expired pending sends cleaned")
+
 	creds, err := c.loadCredentials()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
+			logger.Info("client", "no saved session")
 			c.database = db
+			logger.Success("client", "initialized without session")
 			return nil
 		}
+		logger.Error("client", "credentials load failed", "error", err)
 		_ = db.Close()
 		return fmt.Errorf("failed to load credentials: %w", err)
 	}
@@ -185,12 +202,17 @@ func (c *BloomClient) Initialize() error {
 	c.database = db
 	c.SetToken(creds.Token)
 	c.startWebSocket(context.Background(), c.wsURL)
+
+	logger.Success("client", "initialized", "user_id", creds.UserID)
+
 	return nil
 }
 
 func (c *BloomClient) Close() error {
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
+
+	logger.Info("client", "closing")
 
 	c.CancelExchange()
 	c.stopWebSocket()
@@ -200,10 +222,21 @@ func (c *BloomClient) Close() error {
 	c.database = nil
 
 	if db != nil {
-		return db.Close()
+		if err := db.Close(); err != nil {
+			logger.Error("client", "database close failed", "error", err)
+			_ = logger.Close()
+			return err
+		}
 	}
 
+	logger.Success("client", "closed")
+	_ = logger.Close()
+
 	return nil
+}
+
+func (c *BloomClient) LogFilePath() string {
+	return filepath.Join(c.storagePath, logger.FileName)
 }
 
 func (c *BloomClient) SetToken(token string) {

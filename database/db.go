@@ -9,6 +9,8 @@ import (
 
 	sqlite "gosqlite.org"
 	"gosqlite.org/vfs/crypto"
+
+	"github.com/ephmrl-team/bloom-root/logger"
 )
 
 type Database struct {
@@ -17,15 +19,20 @@ type Database struct {
 }
 
 func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
+	logger.Info("database", "database opening")
+
 	if len(encryptionKey) != 32 {
+		logger.Error("database", "database open failed", "reason", "invalid encryption key")
 		return nil, fmt.Errorf("invalid encryption key")
 	}
 
 	if storagePath == "" {
+		logger.Error("database", "database open failed", "reason", "storage path is empty")
 		return nil, fmt.Errorf("storage path is empty")
 	}
 
 	if err := os.MkdirAll(storagePath, 0o700); err != nil {
+		logger.Error("database", "storage directory creation failed", "error", err)
 		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
@@ -41,6 +48,7 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 		},
 	)
 	if err != nil {
+		logger.Error("database", "encrypted database open failed", "error", err)
 		return nil, fmt.Errorf("failed to open encrypted database: %w", err)
 	}
 
@@ -121,6 +129,7 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
+		logger.Error("database", "database schema creation failed", "error", err)
 		return nil, fmt.Errorf("failed to create schema: %w", err)
 	}
 
@@ -131,6 +140,7 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 	`)
 	if err != nil {
 		db.Close()
+		logger.Error("database", "database schema inspection failed", "error", err)
 		return nil, fmt.Errorf("failed to inspect chat_sync_states schema: %w", err)
 	}
 	hasNewestContiguousID := rows.Next()
@@ -142,20 +152,29 @@ func NewDatabase(encryptionKey []byte, storagePath string) (*Database, error) {
 			ADD COLUMN newest_contiguous_id INTEGER NOT NULL DEFAULT 0
 		`); err != nil {
 			db.Close()
+			logger.Error("database", "database schema migration failed", "error", err)
 			return nil, fmt.Errorf("failed to add newest_contiguous_id: %w", err)
 		}
+
+		logger.Info("database", "database schema migrated")
 	}
+
+	logger.Success("database", "database opened")
 
 	return &Database{db: db}, nil
 }
 
 func (d *Database) ClearAll() error {
+	logger.Info("database", "database clear started")
+
 	if d == nil || d.db == nil {
+		logger.Warn("database", "database clear skipped", "reason", "database is not initialized")
 		return fmt.Errorf("database is not initialized")
 	}
 
 	tx, err := d.db.Begin()
 	if err != nil {
+		logger.Error("database", "database clear failed", "reason", "begin transaction", "error", err)
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -168,17 +187,22 @@ func (d *Database) ClearAll() error {
 		"users",
 	} {
 		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
+			logger.Error("database", "database table clear failed", "table", table, "error", err)
 			return fmt.Errorf("failed to clear %s: %w", table, err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
+		logger.Error("database", "database clear commit failed", "error", err)
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	if _, err := d.db.Exec("VACUUM"); err != nil {
+		logger.Error("database", "database vacuum failed", "error", err)
 		return fmt.Errorf("failed to vacuum database: %w", err)
 	}
+
+	logger.Success("database", "database cleared")
 
 	return nil
 }
@@ -188,10 +212,13 @@ func (d *Database) Close() error {
 		return nil
 	}
 
+	logger.Info("database", "database closing")
+
 	d.closeMu.Lock()
 	defer d.closeMu.Unlock()
 
 	if d.db == nil {
+		logger.Info("database", "database already closed")
 		return nil
 	}
 
@@ -200,6 +227,13 @@ func (d *Database) Close() error {
 
 	_, checkpointErr := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	closeErr := db.Close()
+	err := errors.Join(checkpointErr, closeErr)
+	if err != nil {
+		logger.Error("database", "database close failed", "error", err)
+		return err
+	}
 
-	return errors.Join(checkpointErr, closeErr)
+	logger.Success("database", "database closed")
+
+	return nil
 }

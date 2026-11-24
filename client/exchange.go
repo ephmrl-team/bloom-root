@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 	"github.com/ephmrl-team/bloom-root/mappers"
 	"github.com/gorilla/websocket"
 	"github.com/slipe-fun/skid-v4/pkg/identity"
@@ -61,9 +62,10 @@ func (c *BloomClient) sendExchangeEvent(eventType string, conn *websocket.Conn) 
 	return nil
 }
 
-func (c *BloomClient) generateExchangeSession(_ string) error {
+func (c *BloomClient) generateExchangeSession(exchangeType string) error {
 	userIdentity, secretKeys, _, _, _, _, err := identity.GenerateIdentity()
 	if err != nil {
+		logger.Error("exchange", "exchange identity generation failed", "type", exchangeType, "error", err)
 		return err
 	}
 
@@ -75,6 +77,8 @@ func (c *BloomClient) generateExchangeSession(_ string) error {
 	c.exchangeSecretKeys = secretKeys
 	c.exchangeUserIdentity = userIdentity
 	c.exchangeMu.Unlock()
+
+	logger.Success("exchange", "exchange identity generated", "type", exchangeType, "user_id", userIdentity.ID)
 
 	return nil
 }
@@ -92,16 +96,22 @@ func (c *BloomClient) GenerateExchangeFingerprint() string {
 }
 
 func (c *BloomClient) startExchangeSession(ctx context.Context, exchangeType string) (string, string, error) {
+	logger.Info("exchange", "exchange session starting", "type", exchangeType)
+
 	roomID, err := c.exchangeManager.StartSession(ctx)
 	if err != nil {
+		logger.Error("exchange", "exchange session start failed", "type", exchangeType, "error", err)
 		return "", "", err
 	}
 
 	if err := c.generateExchangeSession(exchangeType); err != nil {
+		logger.Error("exchange", "exchange session identity failed", "type", exchangeType, "room_id", roomID, "error", err)
 		return "", "", err
 	}
 
 	fingerprint := c.GenerateExchangeFingerprint()
+
+	logger.Success("exchange", "exchange session started", "type", exchangeType, "room_id", roomID, "fingerprint", fingerprint)
 
 	return roomID, fingerprint, nil
 }
@@ -112,6 +122,7 @@ func (c *BloomClient) CancelExchange() {
 	if c.exchangeCancel != nil {
 		c.exchangeCancel()
 		c.exchangeCancel = nil
+		logger.Info("exchange", "exchange cancelled")
 	}
 }
 
@@ -120,10 +131,24 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 		if r := recover(); r != nil {
 			recoveryKey = ""
 			err = fmt.Errorf("exchange panic: %v", r)
+			logger.Error("exchange", "exchange panicked", "type", exchangeType, "room_id", roomID, "error", r)
 		}
+
+		if err != nil {
+			logger.Error("exchange", "exchange failed", "type", exchangeType, "room_id", roomID, "error", err)
+			return
+		}
+
+		logger.Success("exchange", "exchange completed", "type", exchangeType, "room_id", roomID)
 	}()
 
+	logger.Info("exchange", "exchange starting", "type", exchangeType, "room_id", roomID, "fingerprint", fingerprint)
+
 	isScanner := c.GenerateExchangeFingerprint() != fingerprint
+
+	if isScanner {
+		logger.Info("exchange", "exchange scanner mode", "room_id", roomID)
+	}
 
 	if isScanner {
 		if err := c.generateExchangeSession(exchangeType); err != nil {
@@ -135,6 +160,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 	initialized := c.exchangeUserIdentity != nil && c.exchangeSecretKeys != nil
 	c.exchangeMu.Unlock()
 	if !initialized {
+		logger.Error("exchange", "exchange session is not initialized", "type", exchangeType, "room_id", roomID)
 		return "", errors.New("exchange session is not initialized")
 	}
 
@@ -166,18 +192,25 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 		var err error
 		creds, err = c.loadCredentials()
 		if err != nil {
+			logger.Error("exchange", "exchange credentials load failed", "type", exchangeType, "room_id", roomID, "error", err)
 			return "", fmt.Errorf("failed to load credentials for push exchange: %w", err)
 		}
 		if len(creds.RawRecoveryKey) != 16 {
+			logger.Error("exchange", "exchange recovery key is invalid", "type", exchangeType, "room_id", roomID, "length", len(creds.RawRecoveryKey))
 			return "", errors.New("invalid raw recovery key length")
 		}
 	}
 
+	endpoint := strings.Split(url, "?")[0]
+
 	conn, _, err := c.websocketDialer().DialContext(ctx, url, nil)
 	if err != nil {
+		logger.Error("exchange", "exchange websocket dial failed", "type", exchangeType, "room_id", roomID, "endpoint", endpoint, "error", err)
 		return "", fmt.Errorf("failed to dial exchange websocket: %w", err)
 	}
 	defer conn.Close()
+
+	logger.Success("exchange", "exchange websocket connected", "type", exchangeType, "room_id", roomID, "endpoint", endpoint)
 
 	identityMessage := &exchangeInit{
 		Type:   "exchange.identity",
@@ -191,12 +224,16 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 
 	identityBytes, err := json.Marshal(identityMessage)
 	if err != nil {
+		logger.Error("exchange", "exchange identity marshal failed", "type", exchangeType, "room_id", roomID, "error", err)
 		return "", fmt.Errorf("failed to marshal: %w", err)
 	}
 
 	if err := conn.WriteMessage(websocket.TextMessage, identityBytes); err != nil {
+		logger.Error("exchange", "exchange identity send failed", "type", exchangeType, "room_id", roomID, "error", err)
 		return "", fmt.Errorf("failed to send: %w", err)
 	}
+
+	logger.Info("exchange", "exchange identity sent", "type", exchangeType, "room_id", roomID, "user_id", identityMessage.UserID)
 
 	_ = c.sendExchangeEvent("exchange.ask_for_identity", conn)
 
@@ -221,13 +258,17 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 
 			var event WsEvent
 			if err := json.Unmarshal(message, &event); err != nil {
+				logger.Warn("exchange", "exchange event unmarshal failed", "type", exchangeType, "room_id", roomID, "error", err)
 				continue
 			}
+
+			logger.Info("exchange", "exchange event received", "type", exchangeType, "room_id", roomID, "event", event.Type)
 
 			switch event.Type {
 			case "exchange.identity":
 				var event exchangeInit
 				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "exchange.identity unmarshal failed", "room_id", roomID, "error", err)
 					continue
 				}
 
@@ -289,6 +330,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 			case "exchange.handshake":
 				var event exchangeHandshake
 				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "exchange.handshake unmarshal failed", "room_id", roomID, "error", err)
 					continue
 				}
 
@@ -348,6 +390,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 			case "exchange.recovery_key":
 				var event exchangeMessage
 				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "exchange.recovery_key unmarshal failed", "room_id", roomID, "error", err)
 					continue
 				}
 
@@ -406,6 +449,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 			case "exchange.confirm":
 				var event exchangeEvent
 				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "exchange.confirm unmarshal failed", "room_id", roomID, "error", err)
 					continue
 				}
 
@@ -422,6 +466,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 			case "exchange.ask_for_identity":
 				var event exchangeEvent
 				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "exchange.ask_for_identity unmarshal failed", "room_id", roomID, "error", err)
 					continue
 				}
 
@@ -436,6 +481,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 			case "exchange.ask_for_handshake":
 				var event exchangeEvent
 				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "exchange.ask_for_handshake unmarshal failed", "room_id", roomID, "error", err)
 					continue
 				}
 
@@ -476,6 +522,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 			case "exchange.ask_for_recovery_key":
 				var event exchangeEvent
 				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "exchange.ask_for_recovery_key unmarshal failed", "room_id", roomID, "error", err)
 					continue
 				}
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ephmrl-team/bloom-root/crypto"
 	"github.com/ephmrl-team/bloom-root/domain"
+	"github.com/ephmrl-team/bloom-root/logger"
 	"github.com/ephmrl-team/bloom-root/mappers"
 )
 
@@ -76,30 +77,36 @@ func (c *BloomClient) saveCredentials(creds *domain.SavedCredentials) error {
 
 func (c *BloomClient) saveCredentialsLocked(creds *domain.SavedCredentials) error {
 	if creds == nil {
+		logger.Error("credentials", "credentials are nil")
 		return errors.New("credentials are nil")
 	}
 
 	if _, err := mappers.ConvertCredentialsToUser(creds); err != nil {
+		logger.Error("credentials", "credentials validation failed", "user_id", creds.UserID, "error", err)
 		return err
 	}
 
 	plainText, err := json.Marshal(creds)
 	if err != nil {
+		logger.Error("credentials", "credentials marshal failed", "user_id", creds.UserID, "error", err)
 		return err
 	}
 	defer crypto.Zero(plainText)
 
 	if len(c.encryptionKey) != 32 {
+		logger.Error("credentials", "invalid encryption key", "user_id", creds.UserID)
 		return errors.New("invalid encryption key")
 	}
 
 	ciphertext, err := crypto.Encrypt(c.encryptionKey, plainText, nil)
 	if err != nil {
+		logger.Error("credentials", "credentials encryption failed", "user_id", creds.UserID, "error", err)
 		return err
 	}
 
 	filePath := filepath.Join(c.storagePath, "session.dat")
 	if err := writeFileAtomic(filePath, ciphertext); err != nil {
+		logger.Error("credentials", "session file write failed", "user_id", creds.UserID, "error", err)
 		return err
 	}
 
@@ -112,6 +119,8 @@ func (c *BloomClient) saveCredentialsLocked(creds *domain.SavedCredentials) erro
 	c.credentialsMu.Lock()
 	c.credentials = publicCreds
 	c.credentialsMu.Unlock()
+
+	logger.Success("credentials", "credentials saved", "user_id", creds.UserID)
 
 	return nil
 }
@@ -140,15 +149,20 @@ func (c *BloomClient) loadCredentialsLocked() (*domain.SavedCredentials, error) 
 
 	ciphertext, err := os.ReadFile(filePath)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			logger.Error("credentials", "session file read failed", "error", err)
+		}
 		return nil, err
 	}
 
 	if len(c.encryptionKey) != 32 {
+		logger.Error("credentials", "invalid encryption key")
 		return nil, errors.New("invalid encryption key")
 	}
 
 	plainText, err := crypto.Decrypt(c.encryptionKey, ciphertext, nil)
 	if err != nil {
+		logger.Error("credentials", "credentials decryption failed", "error", err)
 		return nil, err
 	}
 	defer crypto.Zero(plainText)
@@ -156,10 +170,12 @@ func (c *BloomClient) loadCredentialsLocked() (*domain.SavedCredentials, error) 
 	var creds domain.SavedCredentials
 	err = json.Unmarshal(plainText, &creds)
 	if err != nil {
+		logger.Error("credentials", "credentials unmarshal failed", "error", err)
 		return nil, err
 	}
 
 	if _, err := mappers.ConvertCredentialsToUser(&creds); err != nil {
+		logger.Error("credentials", "credentials validation failed", "user_id", creds.UserID, "error", err)
 		return nil, err
 	}
 
@@ -168,6 +184,8 @@ func (c *BloomClient) loadCredentialsLocked() (*domain.SavedCredentials, error) 
 	c.credentialsMu.Lock()
 	c.credentials = publicCreds
 	c.credentialsMu.Unlock()
+
+	logger.Success("credentials", "credentials loaded", "user_id", creds.UserID)
 
 	return &creds, nil
 }
@@ -178,15 +196,25 @@ func (c *BloomClient) UpdateCredentialsUserJSON(userJSON []byte) error {
 
 	creds, err := c.loadCredentialsLocked()
 	if err != nil {
+		logger.Error("credentials", "credentials load failed", "error", err)
 		return err
 	}
 
 	creds.UserJSON = append([]byte(nil), userJSON...)
 
-	return c.saveCredentialsLocked(creds)
+	if err := c.saveCredentialsLocked(creds); err != nil {
+		logger.Error("credentials", "credentials update failed", "user_id", creds.UserID, "error", err)
+		return err
+	}
+
+	logger.Success("credentials", "credentials updated", "user_id", creds.UserID)
+
+	return nil
 }
 
 func (c *BloomClient) ClearCredentials() {
+	logger.Info("credentials", "clearing credentials")
+
 	c.CancelExchange()
 	c.stopWebSocket()
 	c.StopChatsSync()
@@ -196,6 +224,7 @@ func (c *BloomClient) ClearCredentials() {
 	c.sessionMu.Lock()
 	filePath := filepath.Join(c.storagePath, "session.dat")
 	if err := os.Remove(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Error("credentials", "session file remove failed", "error", err)
 		clearErrs = append(clearErrs, fmt.Errorf("failed to remove session file: %w", err))
 	}
 
@@ -209,11 +238,15 @@ func (c *BloomClient) ClearCredentials() {
 
 	if c.database != nil {
 		if err := c.database.ClearAll(); err != nil {
+			logger.Error("credentials", "database clear failed", "error", err)
 			clearErrs = append(clearErrs, fmt.Errorf("failed to clear database: %w", err))
 		}
 	}
 
 	if len(clearErrs) > 0 {
 		c.reportBackgroundError(errors.Join(clearErrs...))
+		return
 	}
+
+	logger.Success("credentials", "credentials cleared")
 }

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/ephmrl-team/bloom-root/logger"
 	"resty.dev/v3"
 )
 
@@ -93,6 +95,13 @@ func (c *Client) getToken() string {
 	return c.token
 }
 
+func requestPath(path string) string {
+	if index := strings.IndexByte(path, '?'); index >= 0 {
+		return path[:index]
+	}
+	return path
+}
+
 func Send[Req any, Resp any](ctx context.Context, c *Client, method, path string, body *Req) (*Resp, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -103,6 +112,7 @@ func Send[Req any, Resp any](ctx context.Context, c *Client, method, path string
 		defer cancel()
 	}
 
+	startedAt := time.Now()
 	req := c.httpClient.R().SetContext(ctx)
 
 	if method == http.MethodGet {
@@ -122,15 +132,20 @@ func Send[Req any, Resp any](ctx context.Context, c *Client, method, path string
 		Execute(method, path)
 
 	if err != nil {
+		logger.Error("api", "request failed", "method", method, "path", requestPath(path), "duration", time.Since(startedAt), "error", err)
 		return nil, fmt.Errorf("network error: %w", err)
 	}
 
 	if resp.IsStatusFailure() {
 		if apiError.Code != "" {
+			logger.Warn("api", "request failed", "method", method, "path", requestPath(path), "status", resp.StatusCode(), "duration", time.Since(startedAt), "code", apiError.Code, "message", apiError.Message)
 			return nil, &apiError
 		}
+		logger.Warn("api", "request failed", "method", method, "path", requestPath(path), "status", resp.StatusCode(), "duration", time.Since(startedAt))
 		return nil, fmt.Errorf("http error %d: %s", resp.StatusCode(), resp.String())
 	}
+
+	logger.Info("api", "request completed", "method", method, "path", requestPath(path), "status", resp.StatusCode(), "duration", time.Since(startedAt))
 
 	return &respData, nil
 }

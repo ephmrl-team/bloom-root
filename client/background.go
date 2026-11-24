@@ -3,6 +3,8 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/ephmrl-team/bloom-root/logger"
 )
 
 type BackgroundErrorListener interface {
@@ -26,8 +28,9 @@ func (c *BloomClient) reportBackgroundError(err error) {
 	listener := c.backgroundErrorListener
 	c.listenerMu.RUnlock()
 
+	logger.Error("background", "background error", "error", err)
+
 	if listener == nil {
-		fmt.Println("background error:", err)
 		return
 	}
 

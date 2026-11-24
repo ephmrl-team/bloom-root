@@ -45,6 +45,7 @@ import (
 	"unsafe"
 
 	"github.com/ephmrl-team/bloom-root/client"
+	"github.com/ephmrl-team/bloom-root/logger"
 )
 
 var globalClient *client.BloomClient
@@ -54,6 +55,8 @@ type ErrorResponse struct {
 }
 
 func makeErrorJSON(err error) *C.char {
+	logger.Error("gateway", "request failed", "error", err)
+
 	resp := ErrorResponse{Error: err.Error()}
 	bytes, _ := json.Marshal(resp)
 	return C.CString(string(bytes))
@@ -65,8 +68,15 @@ func makeValueJSON(key, value string) *C.char {
 	return C.CString(string(bytes))
 }
 
+func notInitializedJSON() *C.char {
+	logger.Warn("gateway", "request skipped", "reason", "client not initialized")
+	return C.CString(`{"error": "client not initialized"}`)
+}
+
 //export InitClient
 func InitClient(baseURL, wsURL, storagePath *C.char, encKey *C.uchar, keyLen C.int) *C.char {
+	logger.Info("gateway", "client initialization started")
+
 	goBaseURL := C.GoString(baseURL)
 	goWsURL := C.GoString(wsURL)
 	goStorage := C.GoString(storagePath)
@@ -75,30 +85,48 @@ func InitClient(baseURL, wsURL, storagePath *C.char, encKey *C.uchar, keyLen C.i
 	if globalClient != nil {
 		_ = globalClient.Close()
 		globalClient = nil
+		logger.Info("gateway", "previous client closed")
 	}
 
 	newClient := client.NewClient(goBaseURL, goWsURL, goStorage, goKey)
 	if err := newClient.Initialize(); err != nil {
 		_ = newClient.Close()
+		logger.Error("gateway", "client initialization failed", "error", err)
 		return makeErrorJSON(err)
 	}
 	globalClient = newClient
+	logger.Success("gateway", "client initialized")
 	return nil
 }
 
 //export Shutdown
 func Shutdown() *C.char {
 	if globalClient == nil {
+		logger.Warn("gateway", "shutdown skipped", "reason", "client not initialized")
 		return nil
 	}
+
+	logger.Info("gateway", "client shutdown started")
 
 	err := globalClient.Close()
 	globalClient = nil
 	if err != nil {
+		logger.Error("gateway", "client shutdown failed", "error", err)
 		return makeErrorJSON(err)
 	}
 
+	logger.Success("gateway", "client shutdown completed")
+
 	return nil
+}
+
+//export GetLogFilePath
+func GetLogFilePath() *C.char {
+	if globalClient == nil {
+		return nil
+	}
+
+	return C.CString(globalClient.LogFilePath())
 }
 
 //export FreeString
@@ -111,7 +139,7 @@ func FreeString(p *C.char) {
 //export Register
 func Register() *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	res, err := globalClient.Register(nil)
 	if err != nil {
@@ -127,7 +155,7 @@ func Register() *C.char {
 //export Login
 func Login(recoveryKey *C.char) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	goRecoveryKey := C.GoString(recoveryKey)
 	res, err := globalClient.Login(nil, goRecoveryKey)
@@ -144,7 +172,7 @@ func Login(recoveryKey *C.char) *C.char {
 //export RestoreSession
 func RestoreSession() *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	res, err := globalClient.RestoreSession()
 	if err != nil {
@@ -167,7 +195,7 @@ func ClearCredentials() {
 //export GetMe
 func GetMe() *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	res, err := globalClient.GetMe(nil)
 	if err != nil {
@@ -179,7 +207,7 @@ func GetMe() *C.char {
 //export GetOrFetchMe
 func GetOrFetchMe() *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	res, err := globalClient.GetOrFetchMe(nil)
 	if err != nil {
@@ -191,7 +219,7 @@ func GetOrFetchMe() *C.char {
 //export SearchUsers
 func SearchUsers(query *C.char) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	goQuery := C.GoString(query)
 	res, err := globalClient.SearchUsers(nil, goQuery)
@@ -204,7 +232,7 @@ func SearchUsers(query *C.char) *C.char {
 //export EditUser
 func EditUser(username, displayName, description *C.char, hasUsername, hasDisplayName, hasDescription C.int) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	req := &client.EditRequest{
 		Username:       C.GoString(username),
@@ -224,7 +252,7 @@ func EditUser(username, displayName, description *C.char, hasUsername, hasDispla
 //export GetUser
 func GetUser(userID *C.char) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	goUserID := C.GoString(userID)
 	res, err := globalClient.GetUser(nil, goUserID)
@@ -237,7 +265,7 @@ func GetUser(userID *C.char) *C.char {
 //export CreateChat
 func CreateChat(userID *C.char) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	req := &client.CreateChatRequest{
 		UserID: C.GoString(userID),
@@ -252,7 +280,7 @@ func CreateChat(userID *C.char) *C.char {
 //export GetChats
 func GetChats() *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	res, err := globalClient.GetChats(nil)
 	if err != nil {
@@ -264,7 +292,7 @@ func GetChats() *C.char {
 //export GetLocalChats
 func GetLocalChats() *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	res, err := globalClient.GetLocalChats()
 	if err != nil {
@@ -276,7 +304,7 @@ func GetLocalChats() *C.char {
 //export SendMessage
 func SendMessage(chatID C.int, replyToID C.int, content *C.char) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	goContent := C.GoString(content)
 
@@ -290,7 +318,7 @@ func SendMessage(chatID C.int, replyToID C.int, content *C.char) *C.char {
 //export MarkMessagesSeen
 func MarkMessagesSeen(chatID C.int, messageIDsJSON *C.char) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	goMessageIDs := C.GoString(messageIDsJSON)
 	var messageIDs []int
@@ -307,7 +335,7 @@ func MarkMessagesSeen(chatID C.int, messageIDsJSON *C.char) *C.char {
 //export LoadMessages
 func LoadMessages(chatID C.int, beforeID C.int) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	res, err := globalClient.LoadMessages(nil, "", int(chatID), int(beforeID))
 	if err != nil {
@@ -325,7 +353,7 @@ func LoadMessages(chatID C.int, beforeID C.int) *C.char {
 //export StartExchangeSession
 // func StartExchangeSession(exchangeType *C.char) *C.char {
 // 	if globalClient == nil {
-// 		return C.CString(`{"error": "client not initialized"}`)
+// 		return notInitializedJSON()
 // 	}
 // 	goExchangeType := C.GoString(exchangeType)
 // 	roomID, fingerprint, err := globalClient.StartExchangeSession(goExchangeType)
@@ -344,7 +372,7 @@ func LoadMessages(chatID C.int, beforeID C.int) *C.char {
 //export Exchange
 func Exchange(exchangeType, roomID, fingerprint *C.char) *C.char {
 	if globalClient == nil {
-		return C.CString(`{"error": "client not initialized"}`)
+		return notInitializedJSON()
 	}
 	goExchangeType := C.GoString(exchangeType)
 	goRoomID := C.GoString(roomID)
