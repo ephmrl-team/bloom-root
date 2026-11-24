@@ -469,7 +469,7 @@ func (d *Database) GetChatsLastMessages(chatIDs []int) (map[int]*domain.Message,
 	return result, nil
 }
 
-func (d *Database) GetChatLastReadMessage(chatID int) (*domain.Message, error) {
+func (d *Database) GetChatLastReadMessage(chatID int, userID string) (*domain.Message, error) {
 	row := d.db.QueryRow(`
 		SELECT
 			id,
@@ -483,9 +483,10 @@ func (d *Database) GetChatLastReadMessage(chatID int) (*domain.Message, error) {
 		FROM messages
 		WHERE chat_id = ?
 		  AND seen IS NOT NULL
+		  AND author_id != ?
 		ORDER BY id DESC
 		LIMIT 1
-	`, chatID)
+	`, chatID, userID)
 
 	var msg domain.Message
 
@@ -518,7 +519,7 @@ func (d *Database) GetChatLastReadMessage(chatID int) (*domain.Message, error) {
 	return &slice[0], nil
 }
 
-func (d *Database) GetChatsLastReadMessages(chatIDs []int) (map[int]*domain.Message, error) {
+func (d *Database) GetChatsLastReadMessages(chatIDs []int, userID string) (map[int]*domain.Message, error) {
 	result := make(map[int]*domain.Message)
 
 	if len(chatIDs) == 0 {
@@ -526,12 +527,13 @@ func (d *Database) GetChatsLastReadMessages(chatIDs []int) (map[int]*domain.Mess
 	}
 
 	placeholders := make([]string, len(chatIDs))
-	args := make([]any, len(chatIDs))
+	args := make([]any, 0, len(chatIDs)+1)
 
 	for i, id := range chatIDs {
 		placeholders[i] = "?"
-		args[i] = id
+		args = append(args, id)
 	}
+	args = append(args, userID)
 
 	query := fmt.Sprintf(`
 		WITH ranked_messages AS (
@@ -551,6 +553,7 @@ func (d *Database) GetChatsLastReadMessages(chatIDs []int) (map[int]*domain.Mess
 			FROM messages
 			WHERE chat_id IN (%s)
 			  AND seen IS NOT NULL
+			  AND author_id != ?
 		)
 		SELECT
 			id,

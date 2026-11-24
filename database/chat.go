@@ -117,7 +117,7 @@ func (d *Database) SaveChats(chats []domain.ChatWithKeys) error {
 	return nil
 }
 
-func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
+func (d *Database) GetChat(chatID int, userID string) (*domain.ChatWithKeys, error) {
 	row := d.db.QueryRow(`
 		SELECT id, members, handshake, chat_key, sync_key, created_at
 		FROM chats
@@ -175,7 +175,7 @@ func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
 	}
 	chatWithKeys.LastMessage = lastMsg
 
-	lastReadMsg, err := d.GetChatLastReadMessage(chatID)
+	lastReadMsg, err := d.GetChatLastReadMessage(chatID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (d *Database) GetChat(chatID int) (*domain.ChatWithKeys, error) {
 	return chatWithKeys, nil
 }
 
-func (d *Database) GetChats() ([]domain.ChatWithKeys, error) {
+func (d *Database) GetChats(userID string) ([]domain.ChatWithKeys, error) {
 	rows, err := d.db.Query(`
 		SELECT id, members, handshake, chat_key, sync_key, created_at
 		FROM chats
@@ -263,7 +263,7 @@ func (d *Database) GetChats() ([]domain.ChatWithKeys, error) {
 			return nil, err
 		}
 
-		lastReadMessagesMap, err := d.GetChatsLastReadMessages(chatIDs)
+		lastReadMessagesMap, err := d.GetChatsLastReadMessages(chatIDs, userID)
 		if err != nil {
 			return nil, err
 		}

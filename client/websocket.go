@@ -410,7 +410,7 @@ func (c *BloomClient) handleNewChatEvent(chatEvent *ChatNewEvent) {
 		return
 	}
 
-	if existing, err := c.database.GetChat(chat.ID); err == nil && existing != nil && len(existing.ChatKey) > 0 {
+	if existing, err := c.database.GetChat(chat.ID, creds.UserID); err == nil && existing != nil && len(existing.ChatKey) > 0 {
 		if recipient := getChatOtherMember(&chat, creds.UserID); recipient != nil {
 			if err := c.database.SaveUser(recipient); err != nil {
 				logger.Error("websocket", "chat.new recipient save failed", "chat_id", chat.ID, "user_id", recipient.ID, "error", err)
@@ -506,7 +506,7 @@ func (c *BloomClient) handleNewMessageEvent(messageEvent *MessageNewEvent) {
 		return
 	}
 
-	chat, err := c.getChatContext(context.Background(), messageEvent.ChatID)
+	chat, err := c.getChatContext(context.Background(), messageEvent.ChatID, creds.UserID)
 	if err != nil {
 		logger.Error("websocket", "message.new chat load failed", "message_id", messageEvent.ID, "chat_id", messageEvent.ChatID, "error", err)
 		return

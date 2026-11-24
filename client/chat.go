@@ -351,7 +351,7 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 
 	logger.Info("chat", "remote chats loaded", "count", len(*chats))
 
-	localChats, err := c.database.GetChats()
+	localChats, err := c.database.GetChats(creds.UserID)
 	if err != nil {
 		logger.Error("chat", "local chats load failed", "error", err)
 		return nil, err
@@ -600,8 +600,8 @@ func (c *BloomClient) getChatsContext(ctx context.Context) (*[]ChatResponse, err
 	return &result, nil
 }
 
-func (c *BloomClient) getChatContext(ctx context.Context, chatID int) (*domain.ChatWithKeys, error) {
-	chat, err := c.database.GetChat(chatID)
+func (c *BloomClient) getChatContext(ctx context.Context, chatID int, userID string) (*domain.ChatWithKeys, error) {
+	chat, err := c.database.GetChat(chatID, userID)
 	if err != nil {
 		logger.Error("chat", "chat cache lookup failed", "chat_id", chatID, "error", err)
 		return nil, err
@@ -677,7 +677,7 @@ func (c *BloomClient) getChatContext(ctx context.Context, chatID int) (*domain.C
 
 	logger.Success("chat", "chat loaded", "chat_id", chatID)
 
-	return c.database.GetChat(chatID)
+	return c.database.GetChat(chatID, userID)
 }
 
 func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
@@ -686,7 +686,7 @@ func (c *BloomClient) getLocalChats() ([]ChatResponse, error) {
 		return nil, err
 	}
 
-	chats, err := c.database.GetChats()
+	chats, err := c.database.GetChats(creds.UserID)
 	if err != nil {
 		return nil, err
 	}

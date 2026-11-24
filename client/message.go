@@ -36,7 +36,7 @@ func (c *BloomClient) getChatMessages(ctx context.Context, chatID, messageID int
 		return nil, err
 	}
 
-	chat, err := c.getChatContext(ctx, chatID)
+	chat, err := c.getChatContext(ctx, chatID, creds.UserID)
 	if err != nil {
 		logger.Error("message", "chat load failed", "chat_id", chatID, "error", err)
 		return nil, err
@@ -338,7 +338,7 @@ func (c *BloomClient) sendMessageOnce(ctx context.Context, chatID int, replyToID
 		return nil, err
 	}
 
-	chat, err := c.getChatContext(ctx, chatID)
+	chat, err := c.getChatContext(ctx, chatID, creds.UserID)
 	if err != nil {
 		logger.Error("message", "chat load failed", "chat_id", chatID, "error", err)
 		return nil, err
