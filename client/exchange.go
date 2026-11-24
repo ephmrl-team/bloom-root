@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/ephmrl-team/bloom-root/domain"
 	"github.com/ephmrl-team/bloom-root/logger"
@@ -17,6 +19,8 @@ import (
 	"github.com/slipe-fun/skid-v4/pkg/identity"
 	"github.com/slipe-fun/skid-v4/pkg/messages"
 )
+
+const exchangeTimeout = 5 * time.Minute
 
 type exchangeEvent struct {
 	Type   string `json:"type"`
@@ -42,6 +46,32 @@ type exchangeMessage struct {
 	Ciphertext string `json:"ciphertext"`
 	Nonce      string `json:"nonce"`
 	Salt       string `json:"salt"`
+}
+
+type exchangeError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+type ExchangeSession struct {
+	RoomID      string `json:"room_id"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+func validateExchangeType(exchangeType string) error {
+	if exchangeType != "push" && exchangeType != "pull" {
+		return fmt.Errorf("invalid exchange type: %s", exchangeType)
+	}
+
+	return nil
+}
+
+func exchangeContextError(ctx context.Context) error {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%w after %s", domain.ErrExchangeTimeout, exchangeTimeout)
+	}
+
+	return ctx.Err()
 }
 
 func (c *BloomClient) sendExchangeEvent(eventType string, conn *websocket.Conn) error {
@@ -116,6 +146,23 @@ func (c *BloomClient) startExchangeSession(ctx context.Context, exchangeType str
 	return roomID, fingerprint, nil
 }
 
+func (c *BloomClient) StartExchangeSession(token *CancelToken, exchangeType string) ([]byte, error) {
+	if err := validateExchangeType(exchangeType); err != nil {
+		logger.Error("exchange", "exchange session type is invalid", "type", exchangeType, "error", err)
+		return nil, err
+	}
+
+	roomID, fingerprint, err := c.startExchangeSession(token.context(), exchangeType)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(ExchangeSession{
+		RoomID:      roomID,
+		Fingerprint: fingerprint,
+	})
+}
+
 func (c *BloomClient) CancelExchange() {
 	c.exchangeMu.Lock()
 	defer c.exchangeMu.Unlock()
@@ -144,6 +191,18 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 
 	logger.Info("exchange", "exchange starting", "type", exchangeType, "room_id", roomID, "fingerprint", fingerprint)
 
+	if err := validateExchangeType(exchangeType); err != nil {
+		return "", err
+	}
+
+	if roomID == "" {
+		return "", errors.New("room id is empty")
+	}
+
+	if fingerprint == "" {
+		return "", errors.New("fingerprint is empty")
+	}
+
 	isScanner := c.GenerateExchangeFingerprint() != fingerprint
 
 	if isScanner {
@@ -164,7 +223,7 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 		return "", errors.New("exchange session is not initialized")
 	}
 
-	ctx, cancel := context.WithCancel(token.context())
+	ctx, cancel := context.WithTimeout(token.context(), exchangeTimeout)
 
 	c.exchangeMu.Lock()
 	c.exchangeCancel = cancel
@@ -212,6 +271,13 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 
 	logger.Success("exchange", "exchange websocket connected", "type", exchangeType, "room_id", roomID, "endpoint", endpoint)
 
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetReadDeadline(deadline); err != nil {
+			logger.Error("exchange", "exchange read deadline set failed", "type", exchangeType, "room_id", roomID, "error", err)
+			return "", fmt.Errorf("failed to set exchange read deadline: %w", err)
+		}
+	}
+
 	identityMessage := &exchangeInit{
 		Type:   "exchange.identity",
 		UserID: c.exchangeUserIdentity.ID,
@@ -235,7 +301,10 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 
 	logger.Info("exchange", "exchange identity sent", "type", exchangeType, "room_id", roomID, "user_id", identityMessage.UserID)
 
-	_ = c.sendExchangeEvent("exchange.ask_for_identity", conn)
+	if err := c.sendExchangeEvent("exchange.ask_for_identity", conn); err != nil {
+		logger.Error("exchange", "exchange ask for identity send failed", "type", exchangeType, "room_id", roomID, "error", err)
+		return "", err
+	}
 
 	var (
 		recipientIdentity       *identity.User
@@ -249,10 +318,19 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 	for {
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return "", exchangeContextError(ctx)
 		default:
 			_, message, err := conn.ReadMessage()
 			if err != nil {
+				if ctx.Err() != nil {
+					return "", exchangeContextError(ctx)
+				}
+
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Timeout() {
+					return "", fmt.Errorf("%w after %s", domain.ErrExchangeTimeout, exchangeTimeout)
+				}
+
 				return "", fmt.Errorf("websocket read error: %w", err)
 			}
 
@@ -442,7 +520,10 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 					return "", fmt.Errorf("failed to decrypt recovery key: %w", err)
 				}
 
-				_ = c.sendExchangeEvent("exchange.confirm", conn)
+				if err := c.sendExchangeEvent("exchange.confirm", conn); err != nil {
+					logger.Error("exchange", "exchange confirm send failed", "type", exchangeType, "room_id", roomID, "error", err)
+					return "", err
+				}
 
 				return hex.EncodeToString(decryptedMessage.Content), nil
 
@@ -570,6 +651,21 @@ func (c *BloomClient) Exchange(token *CancelToken, exchangeType, roomID, fingerp
 				if err := conn.WriteMessage(websocket.TextMessage, recoveryKeyBytes); err != nil {
 					return "", fmt.Errorf("failed to send: %w", err)
 				}
+
+			case "message_error":
+				var event exchangeError
+				if err := json.Unmarshal(message, &event); err != nil {
+					logger.Warn("exchange", "message_error unmarshal failed", "room_id", roomID, "error", err)
+					continue
+				}
+
+				logger.Error("exchange", "exchange server error", "type", exchangeType, "room_id", roomID, "message", event.Message)
+
+				if event.Message == "" {
+					return "", errors.New("exchange failed")
+				}
+
+				return "", errors.New(event.Message)
 			}
 		}
 	}

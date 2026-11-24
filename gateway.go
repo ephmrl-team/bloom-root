@@ -351,23 +351,18 @@ func LoadMessages(chatID C.int, beforeID C.int) *C.char {
 }
 
 //export StartExchangeSession
-// func StartExchangeSession(exchangeType *C.char) *C.char {
-// 	if globalClient == nil {
-// 		return notInitializedJSON()
-// 	}
-// 	goExchangeType := C.GoString(exchangeType)
-// 	roomID, fingerprint, err := globalClient.StartExchangeSession(goExchangeType)
-// 	if err != nil {
-// 		return makeErrorJSON(err)
-// 	}
+func StartExchangeSession(exchangeType *C.char) *C.char {
+	if globalClient == nil {
+		return notInitializedJSON()
+	}
 
-// 	resp := map[string]string{
-// 		"room_id":     roomID,
-// 		"fingerprint": fingerprint,
-// 	}
-// 	bytes, _ := json.Marshal(resp)
-// 	return C.CString(string(bytes))
-// }
+	res, err := globalClient.StartExchangeSession(nil, C.GoString(exchangeType))
+	if err != nil {
+		return makeErrorJSON(err)
+	}
+
+	return C.CString(string(res))
+}
 
 //export Exchange
 func Exchange(exchangeType, roomID, fingerprint *C.char) *C.char {

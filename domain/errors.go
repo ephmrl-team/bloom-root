@@ -15,4 +15,5 @@ var (
 	ErrIncompleteUser        = errors.New("user is incomplete")
 	ErrNilSecretKeys         = errors.New("secret keys are nil")
 	ErrNilPublicKeys         = errors.New("public keys are nil")
+	ErrExchangeTimeout       = errors.New("exchange session timed out")
 )
